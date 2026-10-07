@@ -5,7 +5,7 @@ set architecture riscv:rv64
 set tcp auto-retry on
 set tcp connect-timeout 5
 file bin/kernel
-target remote 127.0.0.1:39098
+target remote 127.0.0.1:38890
 if $pc != 0x1000
     echo FAIL: reset PC\n
     quit 1
