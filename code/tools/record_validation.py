@@ -5,8 +5,8 @@ import subprocess
 from pathlib import Path
 
 root = Path(__file__).resolve().parent.parent
-logs = root / "validation"
-logs.mkdir(exist_ok=True)
+logs = root.parent / "report" / "validation"
+logs.mkdir(parents=True, exist_ok=True)
 for name, command in [("build.log", ["make", "-B", "-j2"]),
                       ("qemu.log", ["make", "qemu"]),
                       ("grade.log", ["make", "grade"])]:
@@ -35,7 +35,7 @@ for name, command in [("build.log", ["make", "-B", "-j2"]),
         output = result.stdout + result.stderr
         (logs / name).write_bytes(output)
         if result.returncode:
-            raise RuntimeError(f"{' '.join(command)} failed; see validation/{name}")
+            raise RuntimeError(f"{' '.join(command)} failed; see ../report/validation/{name}")
     (logs / name).write_bytes(output)
-    print(f"Recorded {' '.join(command)} -> validation/{name}")
+    print(f"Recorded {' '.join(command)} -> ../report/validation/{name}")
 print("PASS: final framework build, make qemu and local make grade recorded")

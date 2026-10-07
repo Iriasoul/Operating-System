@@ -7,8 +7,8 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-LOGS = ROOT / "validation"
-LOGS.mkdir(exist_ok=True)
+LOGS = ROOT.parent / "report" / "validation"
+LOGS.mkdir(parents=True, exist_ok=True)
 parser = argparse.ArgumentParser()
 parser.add_argument("--mode", choices=["all", "boot", "gdb"], default="all")
 parser.add_argument("--qemu", default="qemu-system-riscv64")
@@ -43,7 +43,7 @@ def check_boot():
     text = output.decode("utf-8", errors="replace")
     (LOGS / "boot.log").write_text(text, encoding="utf-8")
     if not timed_out or "(THU.CST) os is loading ..." not in text:
-        raise RuntimeError("kernel boot output or wait loop missing; see validation/boot.log")
+        raise RuntimeError("kernel boot output or wait loop missing; see ../report/validation/boot.log")
     print("PASS: supplied kernel prints the expected boot message and stays running")
     return {"boot": "PASS"}
 
@@ -138,13 +138,13 @@ quit 0
                                    cwd=ROOT, stdin=subprocess.DEVNULL,
                                    stdout=log, stderr=subprocess.STDOUT)
         try:
-            result = subprocess.run([args.gdb, "-q", "-nx", "-batch", "-x", "validation/check.gdb"],
+            result = subprocess.run([args.gdb, "-q", "-nx", "-batch", "-x", str(LOGS / "check.gdb")],
                                     cwd=ROOT, capture_output=True, text=True, timeout=30)
             text = result.stdout + result.stderr
             (LOGS / "gdb.log").write_text(text, encoding="utf-8")
             print(text, end="")
             if result.returncode or "PASS: MROM" not in text:
-                raise RuntimeError("GDB check failed; see validation/gdb.log")
+                raise RuntimeError("GDB check failed; see ../report/validation/gdb.log")
         finally:
             stop(process)
     return {"startup_chain": "PASS", "stack": "PASS", "initialization": "PASS"}

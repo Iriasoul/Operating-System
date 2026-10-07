@@ -8,3 +8,5 @@
 + cc libs/string.c
 + ld bin/kernel
 riscv64-unknown-elf-objcopy bin/kernel --strip-all -O binary bin/ucore.img
+make: Warning: File 'obj/kern/driver/console.d' has modification time 0.38 s in the future
+make: warning:  Clock skew detected.  Your build may be incomplete.

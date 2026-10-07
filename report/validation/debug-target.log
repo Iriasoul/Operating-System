@@ -1,0 +1,95 @@
+$ make --no-print-directory debug GDB_PORT=36700
+make: Warning: File 'bin/' has modification time 0.43 s in the future
+
+OpenSBI v1.0
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name             : riscv-virtio,qemu
+Platform Features         : medeleg
+Platform HART Count       : 1
+Platform IPI Device       : aclint-mswi
+Platform Timer Device     : aclint-mtimer @ 10000000Hz
+Platform Console Device   : uart8250
+Platform HSM Device       : ---
+Platform Reboot Device    : sifive_test
+Platform Shutdown Device  : sifive_test
+Firmware Base             : 0x80000000
+Firmware Size             : 252 KB
+Runtime SBI Version       : 0.3
+
+Domain0 Name              : root
+Domain0 Boot HART         : 0
+Domain0 HARTs             : 0*
+Domain0 Region00          : 0x0000000002000000-0x000000000200ffff (I)
+Domain0 Region01          : 0x0000000080000000-0x000000008003ffff ()
+Domain0 Region02          : 0x0000000000000000-0xffffffffffffffff (R,W,X)
+Domain0 Next Address      : 0x0000000080200000
+Domain0 Next Arg1         : 0x0000000087000000
+Domain0 Next Mode         : S-mode
+Domain0 SysReset          : yes
+
+Boot HART ID              : 0
+Boot HART Domain          : root
+Boot HART ISA             : rv64imafdcsuh
+Boot HART Features        : scounteren,mcounteren,time
+Boot HART PMP Count       : 16
+Boot HART PMP Granularity : 4
+Boot HART PMP Address Bits: 54
+Boot HART MHPM Count      : 0
+Boot HART MIDELEG         : 0x0000000000001666
+Boot HART MEDELEG         : 0x0000000000f0b509
+qemu-system-riscv64: terminating on signal 15 from pid 432 (make)
+
+$ riscv64-unknown-elf-gdb -q -nx -batch -x <same-checks-with-matching-port>
+The target architecture is set to "riscv:rv64".
+0x0000000000001000 in ?? ()
+Reset PC = 0x1000
+=> 0x1000:	auipc	t0,0x0
+   0x1004:	addi	a2,t0,40
+   0x1008:	csrr	a0,mhartid
+   0x100c:	ld	a1,32(t0)
+   0x1010:	ld	t0,24(t0)
+   0x1014:	jr	t0
+0x0000000000001004 in ?? ()
+0x0000000000001008 in ?? ()
+0x000000000000100c in ?? ()
+0x0000000000001010 in ?? ()
+0x0000000000001014 in ?? ()
+0x0000000080000000 in ?? ()
+OpenSBI PC = 0x80000000; reset instructions executed = 6
+Hardware assisted breakpoint 1 at 0x80200000: file kern/init/entry.S, line 7.
+
+Breakpoint 1, kern_entry () at kern/init/entry.S:7
+7	    la sp, bootstacktop
+Kernel entry PC = 0x80200000
+=> 0x80200000 <kern_entry>:	auipc	sp,0x3
+   0x80200004 <kern_entry+4>:	mv	sp,sp
+   0x80200008 <kern_entry+8>:	j	0x8020000a <kern_init>
+   0x8020000a <kern_init>:	auipc	a0,0x3
+Hardware assisted breakpoint 2 at 0x8020000a: file kern/init/init.c, line 8.
+
+Breakpoint 2, kern_init () at kern/init/init.c:8
+8	    memset(edata, 0, end - edata);
+C entry PC = 0x8020000a; SP = 0x80203000; bootstacktop = 0x80203000
+Hardware assisted breakpoint 3 at 0x80200488: file libs/string.c, line 275.
+
+Breakpoint 3, memset (s=0x80203008, c=c@entry=0 '\000', n=18446744073709551615) at libs/string.c:275
+275	    while (n -- > 0) {
+memset: dest=0x80203008 value=0 length=0
+Hardware assisted breakpoint 4 at 0x80200054: file kern/libs/stdio.c, line 40.
+
+Breakpoint 4, cprintf (fmt=fmt@entry=0x802004c0 "%s\n\n") at kern/libs/stdio.c:40
+40	    va_start(ap, fmt);
+BSS range: edata=0x80203008 end=0x80203008
+BSS is empty in this supplied lab1 build; memset arguments verified.
+cprintf format and message:
+0x802004c0:	"%s\n\n"
+0x802004a0:	"(THU.CST) os is loading ...\n"
+PASS: MROM -> OpenSBI -> kernel; stack and initialization verified

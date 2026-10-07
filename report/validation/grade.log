@@ -55,5 +55,5 @@ cprintf format and message:
 0x802004a0:	"(THU.CST) os is loading ...\n"
 PASS: MROM -> OpenSBI -> kernel; stack and initialization verified
 Lab1 local checks: 4/4 PASS (not an official grading score)
-make[1]: Warning: File 'obj/libs/sbi.d' has modification time 0.017 s in the future
+make[1]: Warning: File 'obj/kern/driver/console.d' has modification time 0.18 s in the future
 make[1]: warning:  Clock skew detected.  Your build may be incomplete.

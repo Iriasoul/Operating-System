@@ -1,21 +1,33 @@
-# Operating-System
+# Operating-System · Lab1
 
-NKU《操作系统》课程代码仓库 - 2026 Fall。
+本分支为实验一提交分支 `lab1`，使用小组提供的课程代码框架。交付物按课程要求放在两个文件夹中：
 
-本次作业使用小组提供的 **lab1/** 课程框架。此前单独编写的 labcodes/lab1 内核已删除，实验报告按照根目录的《实验报告模板.md》重写。
-
-- [实验一报告](lab1/report.md)
-- [最终提示词与规格](lab1/prompts.md)
-- [框架运行说明](lab1/README.md)
-- [三人分工](docs/分工.md)
-- [框架修改与验收记录](docs/实验一验收.md)
-
-在已有 WSL 环境中验证：
-
-~~~powershell
-wsl -d CompilerLab -- bash -lc 'cd /mnt/c/Users/18695/Desktop/Operating-System/lab1 && make && make qemu'
+~~~text
+code/                     实现后的源代码、Makefile 和调试工具
+report/
+  report.md               按课程模板编写的实验报告
+  prompt.md               本实验提示词汇总
+  images/                 报告引用的测试结果图片
+  validation/             图片对应的原始运行日志
+  support/                三人分工与框架修改记录
+  实验报告模板.md          用户提供的原始模板
 ~~~
 
-在 lab1 目录运行 make grade 可执行补充的本地启动检查。它验证本次框架，输出 4/4 PASS，不代表官方评分。完整运行日志和输出图分别位于 lab1/validation 和 lab1/images。
+- [实验报告](report/report.md)
+- [提示词汇总](report/prompt.md)
+- [编译、运行与调试说明](code/README.md)
+- [三人分工](report/support/分工.md)
 
-原始报告模板保持不变。三位成员均填写 Codex；学号和具体模型版本尚未提供，已在报告中注明。提交仓库：[Iriasoul/Operating-System](https://github.com/Iriasoul/Operating-System)，分支 main。
+在配置好 RISC-V 工具链、QEMU 和 GDB 的 Linux/WSL 环境中运行：
+
+~~~bash
+cd code
+make
+make qemu
+# 退出 QEMU：Ctrl+A，松开后按 X
+make grade
+~~~
+
+本地验证包含启动消息、启动链、栈及初始化四项检查，不代表官方评分。报告中的图片由真实终端日志渲染，原始日志保存在 report/validation/。
+
+三位成员为石晨昊、王策、吕昊远，均使用 Codex；未提供的学号和具体模型版本在报告中注明。提交仓库：[Iriasoul/Operating-System · lab1](https://github.com/Iriasoul/Operating-System/tree/lab1)。

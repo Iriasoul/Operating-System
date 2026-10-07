@@ -25,6 +25,8 @@ HOSTCC		:= gcc
 HOSTCFLAGS	:= -Wall -O2
 
 GDB		:= $(GCCPREFIX)gdb
+GDB_PORT ?= 1234
+PYTHON ?= python3
 
 CC		:= $(GCCPREFIX)gcc
 CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror
@@ -163,21 +165,21 @@ qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-machine virt \
 		-nographic \
 		-bios default \
-		-device loader,file=$(UCOREIMG),addr=0x80200000
+		-kernel $(UCOREIMG)
 
 debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-device loader,file=$(UCOREIMG),addr=0x80200000\
-		-s -S
+		-kernel $(UCOREIMG) \
+		-gdb tcp:127.0.0.1:$(GDB_PORT) -S
 
 gdb:
-	riscv64-unknown-elf-gdb \
+	$(GDB) \
     -ex 'file bin/kernel' \
     -ex 'set arch riscv:rv64' \
-    -ex 'target remote localhost:1234'
+    -ex 'target remote 127.0.0.1:$(GDB_PORT)'
 
 	
 .PHONY: grade touch
@@ -192,7 +194,7 @@ MAKEOPTS		:= --quiet --no-print-directory
 
 grade:
 	$(V)$(MAKE) $(MAKEOPTS) clean
-	$(V)$(SH) tools/grade.sh
+	$(V)QEMU="$(QEMU)" GDB="$(GDB)" PYTHON="$(PYTHON)" $(SH) tools/grade.sh
 
 touch:
 	$(V)$(foreach f,$(TOUCH_FILES),$(TOUCH) $(f))
@@ -221,3 +223,10 @@ tags:
 	$(V)find . -type f -name "*.[chS]" >cscope.files
 	$(V)cscope -bq 
 	$(V)ctags -L cscope.files
+
+.PHONY: check check-gdb
+check: $(UCOREIMG)
+	$(V)$(PYTHON) tools/verify_lab1.py --mode boot --qemu "$(QEMU)" --gdb "$(GDB)"
+
+check-gdb: $(UCOREIMG)
+	$(V)$(PYTHON) tools/verify_lab1.py --mode gdb --qemu "$(QEMU)" --gdb "$(GDB)"
