@@ -54,7 +54,7 @@
 | 模拟器 | QEMU 7.0.0 |
 | 固件 | OpenSBI 1.0，Runtime SBI 0.3 |
 | ELF 属性 | ELF64、RISC-V、RVC、double-float ABI，入口 0x80200000 |
-| 验证工具 | GNU make、Python 3；运行输出图由 Pillow 渲染 |
+| 验证工具 | GNU make、Python 3；用户在 WSL 终端运行并提供真实截图 |
 
 小组使用的 AI 工具：
 
@@ -272,7 +272,7 @@ Requirements：本次启动检查没有交互式输入测试，报告不能声�
 
 #### 模块功能描述
 
-本练习不新增内核功能函数。新增 tools/boot.gdb、tools/verify_lab1.py 和缺失的 tools/grade.sh，并提供日志记录与输出图渲染脚本。Makefile 保留原有构建结构，修正启动参数，让 debug/gdb 使用相同的本机端口。
+本练习不新增内核功能函数。新增 tools/boot.gdb、tools/verify_lab1.py 和缺失的 tools/grade.sh，并提供日志记录脚本及可选的日志预览渲染工具。Makefile 保留原有构建结构，修正启动参数，让 debug/gdb 使用相同的本机端口。
 
 #### 最终提示词
 
@@ -312,8 +312,8 @@ Requirements：结合寄存器和反汇编判断优化后的变量显示；不�
 
 报告证据：
 Pre-Condition：已经执行检查并捕获真实输出。
-Post-Condition：保留完整编译、QEMU、GDB、grade 日志，渲染为图片并嵌入模板。
-Requirements：说明日志输出图与桌面截图的区别；不得把 4/4 本地检查写成官方满分。
+Post-Condition：保留完整编译、QEMU、GDB、grade 日志，最终报告嵌入用户提供的真实终端截图。
+Requirements：截图原样保存，不把日志渲染图当作终端截图；不得把 4/4 本地检查写成官方满分。
 ~~~~
 
 #### 实现迭代过程
@@ -420,21 +420,27 @@ make qemu 按框架设计永久循环。记录脚本观察到输出后主动终�
 | 初始化实参与实际 BSS 边界 | PASS | GDB 初始化检查 |
 | 本地 grade 汇总 | 4/4 PASS | [grade.log](validation/grade.log)、[results.json](validation/results.json) |
 
-**测试运行输出图：**
+**测试运行截图：**
 
-下列图片完整渲染自真实运行日志，方便在 Markdown 中阅读；它们是日志输出图，不是桌面终端截图。原始文本可通过上方链接核对。
+下列四张图片由用户在 2026-10-07 于 code/ 目录执行上述命令后截取，原样保存，未裁剪或重绘。上方原始日志来自此前自动验证；本次终端截图展示了重新运行时的一致结果。截图文件及其 SHA-256 记录见 [截图来源记录](support/screenshot-sources.json)。
 
-编译输出：
+编译截图（make -B -j2）：
 
-![编译实际输出](./images/build.png)
+![编译终端截图](./images/build.png)
 
-make qemu 输出：
+启动截图（make qemu）：OpenSBI 下一阶段地址为 0x80200000，运行模式为 S-mode，内核输出 (THU.CST) os is loading ...。
 
-![QEMU 实际启动输出](./images/qemu.png)
+![QEMU 启动终端截图](./images/qemu.png)
 
-make grade 的一次最终输出：
+本地测试截图上半部分（make grade）：展示复位 PC 0x1000、六条复位指令、进入 OpenSBI 0x80000000 及内核入口 0x80200000。
 
-![测试结果输出图](./images/test_result.png)
+![GDB 启动链终端截图](./images/gdb_startup.png)
+
+本地测试截图下半部分（同一次 make grade）：展示 sp = bootstacktop = 0x80203000、空 BSS 的 memset 参数与最终 4/4 PASS。
+
+![本地测试结果终端截图](./images/test_result.png)
+
+编译截图中保留了 WSL 挂载目录的文件时间偏差警告；本次仍完成镜像生成，后续启动与四项本地检查通过。memset 的源码变量显示受优化影响，实际入口寄存器和段边界确认长度为 0；此次未声称验证非空 BSS 清零。
 
 目录整理后，从 code/ 重新执行构建、启动和本地 grade，并将最终日志写入 report/validation/。日志完整保留实际输出；本地检查结果不代表官方评分。
 

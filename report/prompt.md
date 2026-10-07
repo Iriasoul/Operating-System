@@ -115,8 +115,8 @@ Requirements：结合寄存器和反汇编判断优化后的变量显示；不�
 
 报告证据：
 Pre-Condition：已经执行检查并捕获真实输出。
-Post-Condition：保留完整编译、QEMU、GDB、grade 日志，渲染为图片并嵌入模板。
-Requirements：说明日志输出图与桌面截图的区别；不得把 4/4 本地检查写成官方满分。
+Post-Condition：保留完整编译、QEMU、GDB、grade 日志，最终报告嵌入用户提供的真实终端截图。
+Requirements：截图原样保存，不把日志渲染图当作终端截图；不得把 4/4 本地检查写成官方满分。
 ~~~~
 
 ## 提示词 4：按课程提交规范整理分支
@@ -165,3 +165,34 @@ Requirements：本次目录整理只提交 lab1 分支。
 7. 三人均使用 Codex。
 8. 上传到 GitHub，并将交付物放入 lab1 分支。
 9. 按最新提交规范重新整理：一个分支对应一次实验，分支命名 labx；code/ 放实现后的代码；report/ 放 report.md、汇总所有提示词的 prompt.md 和报告引用的测试图片 images/。
+
+## 提示词 5：替换为真实终端截图
+
+~~~~markdown
+[PROMPT]
+任务：将实验报告中的日志渲染图替换为用户提供的真实终端截图。
+操作要求：检查四张截图是否分别涵盖编译、启动、GDB 启动链和最终检查结果；原样复制，不修改截图内容；更新报告引用及图片来源说明，并推送 lab1 分支。
+输出要求：report/images/ 包含 build.png、qemu.png、gdb_startup.png 和 test_result.png，报告逐张说明所展示的结果。
+
+[RELY]
+用户已运行 make -B -j2、make qemu、make grade，并提供四张终端截图。
+启动消息为 (THU.CST) os is loading ...；本地检查最终显示 4/4 PASS。
+此前保存的文本日志来自自动验证，与本次用户截图属于分别执行的记录。
+
+[GUARANTEE]
+保留截图中的真实警告与测试输出，报告不再将提交图片描述为日志渲染图。
+保留本地验证与官方评分的区别；不将空 BSS 描述成非空 BSS 清零测试。
+
+[SPECIFICATION]
+截图核对：
+Pre-Condition：四张源截图可读取，终端输出清晰。
+Post-Condition：确认编译完成、OpenSBI 移交内核、启动链地址、栈顶及最终 PASS，文件原样复制。
+Requirements：保留来源文件名和 SHA-256，不裁剪或重绘。
+
+文档与提交：
+Pre-Condition：截图复制完成。
+Post-Condition：报告嵌入全部四张截图，相关说明一致，GitHub lab1 分支包含更新。
+Requirements：避免辅助日志渲染工具覆盖真实截图。
+~~~~
+
+用户补充要求：“把这些图换成终端截图，你给我命令，我来截图”。随后用户提供四张截图并要求核对。

@@ -43,10 +43,12 @@ make grade       # 清理重建后执行四项本地检查
 
 ## 报告证据
 
-工具将日志写入 [../report/validation/](../report/validation/)，将图片写入 [../report/images/](../report/images/)；code/ 中仅保留代码和构建工具。
+验证工具将日志写入 [../report/validation/](../report/validation/)。用户提供的真实终端截图保存在 [../report/images/](../report/images/)，code/ 中保留代码和构建工具。
 
 ~~~bash
 python3 tools/record_validation.py
 ~~~
 
-上述命令重新构建、运行 QEMU、执行本地 grade 并保存完整输出。在 Windows 中安装 Pillow 后，从本目录运行 `python tools/render_validation.py` 可使用 Consolas 字体重新渲染日志图片。它不属于内核编译依赖。图片为真实日志输出图，不是桌面终端截图。
+上述命令重新构建、运行 QEMU、执行本地 grade 并保存完整输出。报告已使用用户提供的四张真实终端截图。
+
+可选的日志预览工具 `python tools/render_validation.py` 需要 Windows 的 Pillow 与 Consolas 字体，输出到 report/validation/rendered/，不会覆盖 report/images/ 中的真实截图。它不属于内核编译依赖。

@@ -1,4 +1,4 @@
-"""Render authentic terminal logs into report images (not desktop screenshots)."""
+"""Render terminal logs into optional previews; preserve report screenshots."""
 import argparse
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -7,7 +7,7 @@ root = Path(__file__).resolve().parent.parent
 font_path = Path("C:/Windows/Fonts/consola.ttf")
 font = ImageFont.truetype(str(font_path), 18)
 report_dir = root.parent / "report"
-image_dir = report_dir / "images"
+image_dir = report_dir / "validation" / "rendered"
 image_dir.mkdir(parents=True, exist_ok=True)
 for source, target, command in [("build.log", "build.png", "make -B -j2"),
                                 ("qemu.log", "qemu.png", "make qemu"),
@@ -25,4 +25,4 @@ for source, target, command in [("build.log", "build.png", "make -B -j2"),
         color = "#8be9aa" if "PASS" in line else "#d7e0e8"
         draw.text((24, 78 + index * 24), line, font=font, fill=color)
     canvas.save(image_dir / target)
-    print(f"Rendered {source} -> ../report/images/{target} ({width}x{height})")
+    print(f"Rendered {source} -> ../report/validation/rendered/{target} ({width}x{height})")
