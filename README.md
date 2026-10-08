@@ -28,6 +28,6 @@ make qemu
 make grade
 ~~~
 
-本地验证包含启动消息、启动链、栈及初始化四项检查，不代表官方评分。报告中的四张图片为用户提供的真实终端截图；此前自动验证的原始日志保存在 report/validation/。
+本地验证包含启动消息、启动链、栈及初始化四项检查，不代表官方评分。报告中的四张图片为用户提供的真实终端截图；自动验证的原始日志保存在 report/validation/。
 
 三位成员为2412449-石晨昊、2410966-王策、2410668-吕昊远，均使用 Codex，底层模型均为 GPT6.1sol；分工已由小组确认。提交仓库：[Iriasoul/Operating-System · lab1](https://github.com/Iriasoul/Operating-System/tree/lab1)。

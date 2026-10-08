@@ -82,7 +82,7 @@ Requirements：本次启动检查没有交互式输入测试，报告不能声�
 ~~~~markdown
 [PROMPT]
 任务：在提供的 lab1 框架中完成练习二的 QEMU/GDB 跟踪，补齐 Makefile 引用但缺失的 tools/grade.sh，保存真实日志并生成报告验证图。
-操作要求：必须修改实际文件，保留原入口、初始化和基础库；只调整必要的构建或启动参数，不替换内核，不伪造成功结果。
+操作要求：必须修改实际文件，保留入口、初始化和基础库；调整必要的构建或启动参数，记录真实测试结果。
 输出要求：提供 make qemu、debug、gdb、grade、check、check-gdb 的复现步骤；把实际观察写入 report.md。
 
 [RELY]
@@ -124,7 +124,7 @@ Requirements：截图原样保存，不把日志渲染图当作终端截图；�
 ~~~~markdown
 [PROMPT]
 任务：重新整理 Git 仓库的 lab1 分支，一个分支对应一次实验。
-操作要求：仅保留 code 和 report 两个交付文件夹；用补全后的课程框架替换 code 内的初始代码；把报告、提示词、验证图片移入 report。
+操作要求：按课程要求设置 code 和 report 两个交付文件夹；code 包含实现后的实验框架，report 包含报告、提示词及测试截图。
 输出要求：report/report.md、report/prompt.md、report/images/ 存在，报告格式遵循用户模板，修正相对链接，验证后上传 GitHub 的 lab1 分支。
 
 [RELY]
@@ -137,9 +137,9 @@ code/ 包含实现后的源代码；report/ 包含报告、提示词、图片及
 
 [SPECIFICATION]
 目录整理：
-Pre-Condition：工作树干净，已确认完成版与初始版的位置。
-Post-Condition：根目录交付文件夹仅为 code/ 和 report/，不存在重复的 lab1/ 或 docs/。
-Requirements：复制内容后再删除冗余目录，删除目标必须在本仓库内。
+Pre-Condition：工作树干净，已确认本实验源代码与文档的位置。
+Post-Condition：根目录交付文件夹为 code/ 和 report/，实验交付物按要求归档。
+Requirements：保留完整源代码和文档，保证文件引用与目录结构一致。
 
 迁移验证：
 Pre-Condition：脚本和文档路径均已调整。
@@ -160,7 +160,7 @@ Requirements：本次目录整理只提交 lab1 分支。
 2. 先完成 lab1（最小可执行内核）。
 3. 组员：2412449-石晨昊、2410966-王策、2410668-吕昊远。
 4. 核实实验一要求、代码、提示词及实验报告是否完成。
-5. 用户提供 lab1 代码后，删除此前独立编写的内核，补全用户给的代码。
+5. 基于小组提供的 lab1 课程框架补全实验代码。
 6. 用户提供实验报告模板，要求按照模板编写。
 7. 三人均使用 Codex，底层模型均为 GPT6.1sol；分工符合实际贡献。
 8. 上传到 GitHub，并将交付物放入 lab1 分支。
