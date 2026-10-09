@@ -14,6 +14,6 @@ make qemu
 make grade
 ~~~
 
-小组成员：石晨昊、王策、吕昊远
+小组成员：2412449-石晨昊、2410966-王策、2410668-吕昊远
 
 项目仓库：[Iriasoul/Operating-System · lab1](https://github.com/Iriasoul/Operating-System/tree/lab1)
