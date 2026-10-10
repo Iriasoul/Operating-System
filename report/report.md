@@ -14,16 +14,16 @@
 
 | 成员 | 负责的练习/模块 |
 |------|----------------|
-| 2412449-石晨昊 | 练习一：入口汇编、启动栈、链接布局与 C 初始化分析 |
-| 2410966-王策 | SBI 约束修正、输入接口补齐、输出链与构建流程核对 |
-| 2410668-吕昊远 | 练习二：QEMU/GDB 跟踪、验证脚本、日志及运行结果整理 |
+| 2412449-石晨昊 | 练习一 |
+| 2410966-王策 | 练习二 |
+| 2410668-吕昊远 | 练习二 |
 
 实验报告分工：
 
 | 成员 | 报告职责 |
 |------|----------|
 | 2412449-石晨昊 | 实验目的、整体逻辑、练习一和对应 OS 原理知识点 |
-| 2410966-王策 | 环境、SBI 修改说明、提示词和 AI 协作经验 |
+| 2410966-王策 | 实验总结 |
 | 2410668-吕昊远 | 练习二过程、测试与验证、运行图片、报告整合 |
 
 
@@ -33,10 +33,10 @@
 
 本实验的主要目的是：
 
-1. 理解 RISC-V 从 QEMU 复位桩、OpenSBI 到 S-mode 内核的启动交接。
-2. 理解链接脚本、ELF、裸镜像，以及栈和 BSS 对 C 运行环境的作用。
-3. 理解 cprintf 经控制台封装到 SBI ecall 的格式化输出链。
-4. 使用 GDB 观察实际指令、地址和寄存器等信息，以真实结果验证 AI 的实现。
+1. 使用 链接脚本 描述内存布局
+2. 进行 交叉编译 生成可执行文件，进而生成内核镜像
+3. 使用 OpenSBI 作为 bootloader 加载内核镜像，并使用 Qemu 进行模拟
+4. 使用 OpenSBI 提供的服务，在屏幕上格式化打印字符串用于以后调试
 
 ---
 
@@ -48,7 +48,7 @@
 | 目标平台 | QEMU virt，64 位 RISC-V，单 hart，128 MiB |
 | 交叉编译器 | riscv64-unknown-elf-gcc 15.1.0 |
 | 调试器 | riscv64-unknown-elf-gdb 16.3.90.20250610-git |
-| 模拟器 | QEMU 7.0.0 |
+| 模拟器 | QEMU 4.1.1 |
 | 固件 | OpenSBI 1.0，Runtime SBI 0.3 |
 | ELF 属性 | ELF64、RISC-V、RVC、double-float ABI，入口 0x80200000 |
 | 验证工具 | GNU make、Python 3 |
@@ -67,29 +67,32 @@
 
 ### 2.1 本章节的逻辑主线
 
-本章围绕“让第一段内核代码在处理器上正确运行”这一核心问题展开。具体流程上，内核不能依赖宿主操作系统提供的进程栈、标准库或启动例程，需要确定加载地址、准备栈并建立 C 初始化环境。固件先完成机器环境初始化，再把控制权交给内核；内核打印信息，再由调试器验证各阶段是否真正执行。
+Lab1主要是执行最小内核，并理解从机器启动到操作系统运行的过程。与普通程序不一样的是，内核刚取得控制权时没有现成的进程栈或 C 运行时入口，必须依靠链接脚本指定地址，再由入口汇编建立栈环境，之后才能调用 C 函数。
 
-主线是：复位 0x1000 → MROM → OpenSBI 0x80000000 → kern_entry 0x80200000 → kern_init → BSS 初始化 → cprintf 输出 → 无限循环。
+启动路径可以概括为：QEMU 复位地址 0x1000 → 复位 ROM → OpenSBI 入口附近 0x80000000 → 内核入口 kern_entry（0x80200000）→ kern_init → 清理 BSS 对应区间 → 控制台输出 → 循环。不同阶段各有分工：QEMU 负责虚拟硬件及镜像装载，复位 ROM 准备启动参数并转入固件，OpenSBI 配置更高特权级的运行环境，最终将执行权交给 S-mode 内核。
+
+本实验主要涉及以下三个方面的内容：
+
+1. **内核的加载与启动。** 理解 QEMU、复位代码和 OpenSBI 在启动过程中的不同作用，以及链接脚本如何确定内核各个段的内存布局和程序入口，使内核镜像能够被加载到预定位置并正确执行。
+2. **内核代码与内存地址的对应关系。** 理解地址相关代码的特点，以及编译、链接过程中确定的地址与程序实际运行地址之间的关系。本实验将内核入口安排在物理地址 `0x80200000`，因此需要保证镜像的实际加载位置与链接时确定的地址布局一致，避免因地址不匹配导致程序无法正常运行。
+3. **内核的基本输出机制。** 在操作系统尚未建立完整运行环境时，内核不能直接依赖普通应用程序使用的标准库输出机制。本实验通过已有的控制台输出函数，将格式化输出逐层转换为字符输出，并利用 `ecall` 指令请求 OpenSBI 提供的 M-mode 服务，最终实现 `cprintf` 的格式化信息输出。
 
 ### 2.2 功能的逐步实现
 
-1. 首先核对 tools/kernel.ld，确定段布局和入口地址，这是固件找到并执行内核的基础。
-2. 接着理解 entry.S，建立启动栈后转入 C，保证编译后的函数能安全使用栈。
-3. 然后理解 init.c，清零 edata/end 标识的范围，调用已有格式化输出链。
-4. 核对 SBI 的编译器约束并补齐输入包装函数，使框架已有接口完整。
-5. 最后生成原框架镜像，通过 QEMU 和 GDB 验证启动，补齐缺失的本地 grade 脚本。
+本次实验主要任务是理解代码：
 
-实验源码框架中提供的 entry.S、init.c、console.c、stdio.c、printfmt.c、string.c 和链接脚本均保持不变。原文件中仅修改 Makefile 和 libs/sbi.c，其余改动仅有额外增加的验证与文档。
+阅读 tools/kernel.ld，确认入口符号及链接地址与镜像预期装载位置一致。
+阅读 kern/init/entry.S，理解汇编入口如何建立内核栈、转入 kern_init。
+结合 kern/init/init.c 分析 BSS 初始化、启动信息打印与循环不返回的原因。
+用 QEMU 运行已有镜像，再使用 GDB 对照启动阶段的实际指令、PC 与 sp 值。
 
 ---
 
 ## 四、实验内容与实现
 
-本部分按练习一、相关 SBI 模块、练习二组织。各模块的提示词按照课程模板编写，采用 [PROMPT]、[RELY]、[GUARANTEE]、[SPECIFICATION] 四部分结构，遵循 [四段式规范](http://8.135.34.58/lab2026/_book/lab0.5/3_prompt_structure.html)。
-
 ### 练习一：理解内核启动中的程序入口操作
 
-**负责人：** 2412449-石晨昊
+**负责人：** 2412449-石晨昊 2410966-王策
 
 #### 模块功能描述
 
@@ -100,80 +103,21 @@ int kern_init(void) __attribute__((noreturn));
 void *memset(void *s, char c, size_t n);
 int cprintf(const char *fmt, ...);
 /* kern_entry、bootstack、bootstacktop 是汇编符号。 */
-/* edata、end 由链接脚本提供。 */
 ~~~
 
 kern_entry 负责建立栈、设好栈指针，然后直接跳进 kern_init。kern_init 则负责清零 [edata, end) 的 BSS，再调用 cprintf 打印启动信息，之后便进入死循环，不再返回。
-
 
 **la sp, bootstacktop 完成什么操作，目的是什么？**
 
 la 是加载地址的伪指令，功能是把 bootstacktop 这个符号的地址写入 sp。此处取的是符号地址，不是该位置保存的数据。bootstack 在 entry.S 中预留了两页，共 8192 字节；栈向低地址增长，因此空栈时 sp 指向预留的空间的最高处，且满足 16 字节对齐。
 
-它的目的是在进入 C 代码之前建立栈，从而支持 C 函数的局部变量、寄存器保存、返回地址保存和函数调用这些功能。编译器生成的序言可能第一条指令就要用到栈，因此必须先于 C 入口执行，在 C 代码之前完成。该指令在框架中实际展开为：
-
-~~~asm
-0x80200000: auipc sp,0x3
-0x80200004: mv    sp,sp
-~~~
-
-在 kern_init 第一条机器指令处，GDB 可以读到 sp = bootstacktop = 0x80203000，bootstack = 0x80201000，两者差值恰好为 0x2000，与预留的两页空间完全一致。
+它的目的是在进入 C 代码之前建立栈，从而支持 C 函数的局部变量、寄存器保存、返回地址保存和函数调用这些功能。编译器生成的序言可能第一条指令就要用到栈，因此必须先于 C 入口执行，在 C 代码之前完成。在 kern_init 第一条机器指令处，GDB 可以读到 sp = bootstacktop = 0x80203000，bootstack = 0x80201000，差值为 0x2000，与预留的两页栈空间一致。
 
 **tail kern_init 完成什么操作，目的是什么？**
 
-tail 是尾调用伪指令，把控制权转移到 kern_init，不会为返回 kern_entry 建立新的返回地址；这也与不返回的内核入口设计约定相符。kern_init 标记为 noreturn，输出信息后无限循环。
-
-因此，链接器会把这条伪指令松弛为一条普通跳转，本次实际展开为：
-
-~~~asm
-0x80200008: j 0x8020000a <kern_init>
-~~~
-
-该指令不会涉及 ra。此外还需注意的是，这类伪指令的展开形式会随工具链和链接设置变化，此前开发过程中错误地使用了非框架的 auipc/jr 写法，地址和形式都产生了一定的差异。
-
-#### 最终提示词
-
-~~~~markdown
-[PROMPT]
-任务：阅读提供的 code/kern/init/entry.S、kern/init/init.c、kern/mm/mmu.h、kern/mm/memlayout.h 和 tools/kernel.ld，在 report/report.md 完成练习一。
-操作要求：必须修改实际报告文件，保留这些已有的启动代码，不另写一套内核；结合实际反汇编解释源码。
-输出要求：回答 la sp, bootstacktop 与 tail kern_init 的操作和目的，说明栈、调用约定及伪指令展开。
-
-[RELY]
-#define PGSIZE 4096
-#define PGSHIFT 12
-#define KSTACKPAGE 2
-#define KSTACKSIZE (KSTACKPAGE * PGSIZE)
-入口符号 kern_entry，链接地址 0x80200000，栈符号 bootstack、bootstacktop。
-int kern_init(void) __attribute__((noreturn));
-void *memset(void *s, char c, size_t n);
-int cprintf(const char *fmt, ...);
-edata、end 来自提供的链接脚本。
-
-[GUARANTEE]
-报告回答两条指令的作用和目的，并说明 kern_entry、kern_init、memset 和 cprintf 的关系。
-保持已有函数签名，不把符号地址与符号处的数据混为一谈。
-
-[SPECIFICATION]
-kern_entry：
-Pre-Condition：固件已移交控制权，内核还未建立自己的 C 栈。
-Post-Condition：解释 C 入口之前 sp 等于 bootstacktop，16 字节对齐，栈向低地址增长。
-Requirements：说明为何必须先建立栈，再执行 C 代码。
-
-tail：
-Pre-Condition：栈已建立，kern_init 不返回。
-Post-Condition：解释控制权转移及不建立返回入口的新返回地址；给出本次实际展开。
-Requirements：区分源码伪指令与随工具链、链接配置变化的机器指令。
-
-kern_init：
-Pre-Condition：栈与链接符号有效。
-Post-Condition：解释清零 [edata,end)、输出信息与无限循环。
-Requirements：不能清零正在使用的栈；空 BSS 不得描述成非空探针清零测试。
-~~~~
+tail kern_init 是尾调用形式的跳转伪指令：它将下一阶段执行位置设为 kern_init，不会像 call 把新的返回位置写入 ra。因为汇编入口只负责准备执行环境，进入内核初始化后不存在需要返回的调用者。框架中的 kern_init 标记为 noreturn，运行到末尾也不会返回 kern_entry。
 
 #### 实现迭代过程
-
-本练习完成一轮框架阅读、反汇编核对和 GDB 验证，没有修改入口与初始化源码。
 
 ##### 第一次迭代
 
@@ -181,267 +125,116 @@ Requirements：不能清零正在使用的栈；空 BSS 不得描述成非空探
 
 **问题解决策略：** 重新读取当前 bin/kernel 的反汇编，在函数第一条指令设置硬件断点，避免把执行过 C 序言后的 sp 当作初始栈顶。
 
-**最终结果：** 两条指令均已解释；实际确认 kern_entry = 0x80200000，kern_init = 0x8020000a，初始 sp = 0x80203000。
-
----
-
-### 功能模块：SBI 接口补齐与调用约束修正
-
-**负责人：** 2410966-王策
-
-#### 模块功能描述
-
-**实现/修改的函数：**
-
-~~~c
-uint64_t sbi_call(uint64_t sbi_type, uint64_t arg0, uint64_t arg1, uint64_t arg2);
-int sbi_console_getchar(void);
-~~~
-
-**已有接口保持不变：**
-
-~~~c
-void sbi_console_putchar(unsigned char ch);
-void sbi_set_timer(unsigned long long stime_value);
-int cprintf(const char *fmt, ...);
-int vcprintf(const char *fmt, va_list ap);
-void cons_putc(int c);
-int cons_getc(void);
-~~~
-
-sbi.c 是内核与 OpenSBI 之间唯一的通道，a7 用于存放功能，a0/a1/a2 放参数，ecall 返回后结果在 a0 里。字符输出和定时器接口框架里已经有了，但 console.c 里的 cons_getc 调用了 sbi_console_getchar，libs/sbi.c 里却没有这个函数的定义，这是接口上的实际空缺。最小启动路径不调用输入接口，加上 --gc-sections 会丢弃未被引用的 cons_getc，因而构建期没有暴露出来；但是一旦有代码真正使用输入路径，它就会变成链接错误。
-
-此外，静态审查还发现这部分存在寄存器重叠与状态描述不充分的风险，但经过分析与测试，这一隐患并不是当前失败的原因。
-
-为了修复上述问题，首先需要重写 sbi_call 的内联汇编：原写法先把参数放在 C 变量里，再用 mv 序列搬进 a7、a0、a1、a2，操作数约束只声明了通用寄存器，只有当编译器恰好把变量分配在别的寄存器上的时候才能正确运行；修复后改用 register ... __asm__("a0")，直接把变量绑定到 ABI 寄存器，并将 a0/a1 声明为读写（ecall 会改写它们），保留 memory clobber，返回 a0 的结果。
-
-此外，同时还要补齐 sbi_console_getchar，按 legacy SBI 编号 2 调用，把固件返回值转成 int，使原 cons_getc 的依赖有定义。与本实验无关的 SBI 声明没有擅自扩展，最终的输出链也仍然由提供的库实现：cprintf → vcprintf → vprintfmt → cputch → cons_putc → sbi_console_putchar → sbi_call → ecall。格式化规则和字符串函数也均无需调整，保留原来的写法即可。
-
-#### 最终提示词
-
-~~~~markdown
-[PROMPT]
-任务：修正 code/libs/sbi.c 的 sbi_call 内联汇编寄存器约束，补齐现有 cons_getc 调用而未定义的 sbi_console_getchar。
-操作要求：必须修改实际文件，保留编号、函数签名及其他框架代码，不重写 console、stdio、printfmt 和 string 库。
-输出要求：使用课程依赖的 legacy SBI，解释原约束的潜在风险，不将静态问题写成已经发生的运行故障。
-
-[RELY]
-libs/defs.h：typedef unsigned long long uint64_t;
-SBI_SET_TIMER = 0，SBI_CONSOLE_PUTCHAR = 1，SBI_CONSOLE_GETCHAR = 2。
-void sbi_console_putchar(unsigned char ch);
-void sbi_set_timer(unsigned long long stime_value);
-int sbi_console_getchar(void);
-cons_getc 已使用字符输入接口，cons_putc 已使用字符输出接口。
-
-[GUARANTEE]
-uint64_t sbi_call(uint64_t sbi_type, uint64_t arg0, uint64_t arg1, uint64_t arg2);
-int sbi_console_getchar(void);
-保持既有 sbi_console_putchar、sbi_set_timer 和头文件接口。
-
-[SPECIFICATION]
-sbi_call：
-Pre-Condition：S-mode 能调用 legacy SBI，固件支持对应扩展。
-Post-Condition：ecall 前 a7 为编号，a0/a1/a2 为实参，返回 a0 的结果。
-Requirements：用固定寄存器操作数描述输入与返回关系，保留 memory clobber，避免使用约束不充分的 mv 序列。
-
-sbi_console_getchar：
-Pre-Condition：固件支持字符输入扩展。
-Post-Condition：调用编号 2，将固件结果转换为 int 返回。
-Case 1：有字符时返回字符。
-Case 2：无输入时保留固件返回语义，不伪造字符。
-Requirements：本次启动检查没有交互式输入测试，报告不能声称输入路径已实测。
-~~~~
-
-#### 实现迭代过程
-
-##### 第一次迭代
-
-**遇到的问题：** 内联汇编约束不充分；声明并被 cons_getc 调用的输入函数没有定义。最小启动路径不调用输入，--gc-sections 会丢弃无关路径，因此最初构建仍成功。
-
-**问题解决策略：** 仅修改 libs/sbi.c 的调用约束和缺失的包装函数，保持接口和其他库。
-
-**最终结果：** 框架编译通过，实际启动输出正常。没有执行交互式字符输入或定时器运行测试，不将它们记为已实测通过。
+**最终结果：** 理解了两条指令的作用；确认 kern_entry = 0x80200000，kern_init = 0x8020000a，内核栈初始化完成后的 sp = 0x80203000。
 
 ---
 
 ### 练习二：使用 GDB 验证启动流程
 
-**负责人：** 2410668-吕昊远
+**负责人：** 2410668-吕昊远，2410966-王策
 
 #### 模块功能描述
 
-本练习中无需修改内核代码，仅编写了 tools/boot.gdb、tools/verify_lab1.py 和缺失的 tools/grade.sh，并提供了记录日志的工具脚本。Makefile 保留原有构建结构，仅对启动参数进行相应的修正，让 debug 和 gdb 统一使用相同的本机端口（默认1234）。
-
-#### 最终提示词
-
-~~~~markdown
-[PROMPT]
-任务：在提供的 lab1 框架中完成练习二的 QEMU/GDB 跟踪，补齐 Makefile 引用但缺失的 tools/grade.sh，保存真实日志并生成报告验证图。
-操作要求：必须修改实际文件，保留入口、初始化和基础库；调整必要的构建或启动参数，记录真实测试结果。
-输出要求：提供 make qemu、debug、gdb、grade、check、check-gdb 的复现步骤；把实际观察写入 report.md。
-
-[RELY]
-原 Makefile 使用 riscv64-unknown-elf 工具链与 QEMU virt，grade 引用了缺失的 grade.sh。
-kern_entry、kern_init、bootstack、bootstacktop、edata、end 来自原框架。
-原 init.c 输出 (THU.CST) os is loading ... 后无限循环。
-现有环境：WSL CompilerLab；GCC 15.1.0、QEMU 7.0.0、OpenSBI 1.0、GDB 16.3.90.20250610-git。
-
-[GUARANTEE]
-保留 Makefile 的构建结构；提供 tools/grade.sh、tools/verify_lab1.py、tools/boot.gdb。
-验证必须运行本次提供的框架；本地 grade 不冒充官方评分。
-
-[SPECIFICATION]
-构建与启动：
-Pre-Condition：工具链可用，原链接脚本可以生成镜像。
-Post-Condition：OpenSBI 下一阶段地址为 0x80200000，内核输出启动信息并持续运行。
-Case 1：原 -device loader 在当前固件下出现入口 0x0，记录失败后使用 -kernel 加载同一个框架镜像。
-Case 2：工具不可用、消息缺失、QEMU 提前退出，返回失败并保留证据。
-Requirements：区分主动终止与提前退出，回收自己启动的进程。
-
-GDB 跟踪：
-Pre-Condition：QEMU 以 -S 暂停，GDB 使用匹配的 ELF 符号。
-Post-Condition：记录 0x1000 的初始指令并单步到 OpenSBI 0x80000000；在原 kern_entry 0x80200000 命中断点，进入 C 前 sp 等于 bootstacktop，栈大小 8192 字节且 16 字节对齐。
-Requirements：停在函数的第一条机器指令，避免把执行序言后的 sp 当作初始栈顶。
-
-初始化检查：
-Pre-Condition：执行到 memset 的入口，edata/end 为实际链接符号。
-Post-Condition：按 ABI 寄存器检查目标、填充值和长度；非空时可写入非零字节并检查清零，空区间明确记录为空。
-Requirements：结合寄存器和反汇编判断优化后的变量显示；不向内核新增人工探针替代原构建状态。
-
-报告证据：
-Pre-Condition：已经执行检查并捕获真实输出。
-Post-Condition：保留完整编译、QEMU、GDB、grade 日志，最终报告嵌入用户提供的真实终端截图。
-Requirements：截图原样保存，不把日志渲染图当作终端截图；不得把 4/4 本地检查写成官方满分。
-~~~~
+本练习中无需修改代码。
 
 #### 实现迭代过程
 
-本模块经历两轮构建和启动验证。
-
-##### 第一次迭代
-
-**遇到的问题：** 原框架能编译，但 -device loader 在当前 QEMU 7.0.0 / OpenSBI 1.0 的环境下没有提供正确的下一阶段地址。日志显示 Domain0 Next Address = 0x0，没有出现内核信息；GDB 也显示等待内核入口超时。以及 Makefile 引用的 grade.sh 的缺失问题。
-
-
-**问题解决策略：** 补齐明确标注为本地验证的 grade 脚本；保存 [首次失败日志](validation/iteration1-loader.log)，依据固件输出定位问题，区分编译成功与启动成功，找出问题所在。
-
-##### 第二次迭代
-
-**问题解决策略：** 将 qemu/debug 改为 -kernel bin/ucore.img，使 OpenSBI 得到正确的下一阶段地址。仍运行原框架生成的镜像，不改入口和初始化源码；验证脚本同步采用相同启动方式。
-
-**最终结果：** 重新构建成功，make qemu 输出启动消息，本地 make grade 四项检查通过，保留最终的完整日志。
-
-**关键改进点总结：** 根据固件日志确定跳转目标；区分镜像装载和内核执行；明确本地检查与官方评分的区别。
+无
 
 #### 调试过程、观察结果和问题解答
 
-在 WSL 中执行：
+我们在 `lab1` 目录下打开两个终端。第一个终端运行 `make debug`，让 QEMU 启动等待调试器连接；第二个终端运行 `make gdb`，启动 RISC-V GDB，加载内核 ELF 文件 `bin/kernel`，并通过 `localhost:1234` 连接 QEMU，以便观察 CPU 的指令执行情况和寄存器状态。
 
-~~~bash
-cd /mnt/c/Users/18695/Desktop/Operating-System/code
-make
-# 终端一
-make debug
-# 终端二
-riscv64-unknown-elf-gdb -q -x tools/boot.gdb
-# 自动复现主要检查
-make check-gdb
-~~~
+**1. 观察 CPU 加电后的初始状态**
 
-1. -S 使 QEMU 在复位状态暂停。连接后 PC 为 0x1000。
-2. x/6i 查看复位桩，逐条 stepi，执行六条指令后到达 0x80000000。
-3. hbreak *kern_entry 后 continue，命中 0x80200000，尚未执行内核第一条指令。
-4. 在 *kern_init 命中断点，查看初始栈；再在 *memset 和 *cprintf 检查初始化实参与输出字符串。
+连接成功后，首先执行 `info registers pc`，查看程序计数器的初始值。GDB 显示 `pc = 0x1000`，说明 QEMU 模拟的 RISC-V CPU 从地址 `0x1000` 开始执行复位代码。
 
-**最初执行的几条指令在哪里，做什么？**
+随后使用 `x/8i $pc` 查看当前地址附近的汇编指令，并通过 `si` 逐条执行指令。我们在每执行一条指令后，使用 `info registers pc t0 a0 a1 a2` 观察寄存器的变化。
 
-本次 QEMU virt 的复位桩位于 0x1000，属于 MROM，不是 0x80000000 的 OpenSBI 主体。实际指令如下：
+观察到的指令及其执行结果如下：
 
-| 地址 | 指令 | 作用 |
-|------|------|------|
-| 0x1000 | auipc t0,0x0 | 取得复位桩基址 |
-| 0x1004 | addi a2,t0,40 | 设置动态固件启动信息地址 |
-| 0x1008 | csrr a0,mhartid | 获取当前 hart ID |
-| 0x100c | ld a1,32(t0) | 读取设备树地址 |
-| 0x1010 | ld t0,24(t0) | 读取固件入口地址 |
-| 0x1014 | jr t0 | 跳转到 OpenSBI 0x80000000 |
+| 地址     | 指令              | 功能及观察结果                                               |
+| -------- | ----------------- | ------------------------------------------------------------ |
+| `0x1000` | `auipc t0,0x0`    | 根据当前 PC 计算地址并保存到 `t0`，执行后 `t0 = 0x1000`，PC 更新为 `0x1004`。 |
+| `0x1004` | `addi a1,t0,32`   | 将 `t0` 加上 32，得到 `a1 = 0x1020`，用于向后续固件传递设备树地址。 |
+| `0x1008` | `csrr a0,mhartid` | 读取当前硬件线程编号，观察到 `a0 = 0`，说明当前执行的是 hart 0。 |
+| `0x100c` | `ld t0,24(t0)`    | 从地址 `0x1018` 读取下一阶段固件的入口地址，执行后 `t0 = 0x80000000`。 |
+| `0x1010` | `jr t0`           | 跳转到 `t0` 保存的地址，执行后 PC 变为 `0x80000000`，进入 OpenSBI。 |
 
-OpenSBI 在 M-mode 初始化运行环境，再切换到 S-mode 并转入内核。使用 -kernel 时，镜像由 QEMU 加载，不能保证对 0x80200000 设置写监视点能看到 OpenSBI 拷贝镜像。加载与复位行为可对照 [QEMU v7.0.0 平台源码](https://github.com/qemu/qemu/blob/v7.0.0/hw/riscv/virt.c)。
+通过逐条执行，可以看到 CPU 首先获取复位代码附近的地址，随后准备设备树地址、读取当前硬件线程编号，最后取得 OpenSBI 的入口地址并完成跳转。
 
-**本次实际观察：**
+**2. 跟踪 CPU 进入 OpenSBI**
 
-| 项目 | 实际值 |
-|------|--------|
-| 复位 PC | 0x1000 |
-| 单步执行复位桩指令数 | 6 |
-| OpenSBI PC | 0x80000000 |
-| kern_entry | 0x80200000 |
-| kern_init | 0x8020000a |
-| bootstack / bootstacktop | 0x80201000 / 0x80203000 |
-| C 入口初始 sp | 0x80203000，等于栈顶且 16 字节对齐 |
-| edata / end | 均为 0x80203008 |
-| memset 入口实参 | a0 = 0x80203008，a1 = 0，a2 = 0 |
-| 启动消息 | (THU.CST) os is loading ... |
+当 CPU 执行 `0x1010` 处的 `jr t0` 后，GDB 显示当前地址变为 `0x80000000`。
 
-此次 BSS 为空，验证的是初始化范围和真实调用，没有声称完成非空 BSS 清零测试。在 -O2 下 GDB 可能将源码变量 n 显示为递减表达式对应的值；以入口 ABI 寄存器和段边界确认实际长度为零。
+此时执行 `x/4i $pc` 查看 OpenSBI 入口附近的汇编指令，观察到：
+
+- `0x80000000: csrr a6,mhartid`
+- `0x80000004: bgtz a6,0x80000108`
+- `0x80000008: auipc t0,0x0`
+- `0x8000000c: addi t0,t0,1032`
+
+第一条指令再次读取硬件线程编号，第二条指令根据编号进行条件跳转。说明 CPU 已经进入 OpenSBI 固件的启动代码。
+
+**3. 验证内核入口地址**
+
+我们在 GDB 中输入 `hbreak *0x80200000`，在内核入口设置硬件执行断点，随后执行 `continue`，使 CPU 继续运行。
+
+GDB 最终在 `kern_entry` 处触发断点，显示：
+
+- 断点位置：`kern/init/entry.S:7`
+- `pc = 0x80200000`
+- `sp = 0x8001bd80`
+
+说明 OpenSBI 完成控制权移交，CPU 到达内核入口 `0x80200000`，将执行内核第一条指令。
+
+使用 `x/6i $pc` 查看内核入口附近的汇编代码，观察到：
+
+- `0x80200000: auipc sp,0x3`
+- `0x80200004: mv sp,sp`
+- `0x80200008: j 0x8020000a <kern_init>`
+
+前两条机器指令对应 `entry.S` 中的 `la sp, bootstacktop`，用于设置内核启动栈指针；第三条指令对应 `tail kern_init`，用于跳转到 C 语言编写的内核初始化函数。
+
+**4.RISC-V 硬件加电后最初执行的几条指令位于什么地址？它们主要完成了哪些功能？**
+
+CPU 加电复位后，程序计数器被初始化为 `0x1000`，最初执行的指令位于从 `0x1000` 开始的复位代码区域。
+
+CPU 首先执行 `auipc` 指令获取当前代码附近的地址，然后通过 `addi` 指令准备设备树地址，使用 `csrr` 指令读取 `mhartid` 寄存器以获取当前硬件线程编号，然后利用 `ld` 指令读取 OpenSBI 的入口地址，最后通过 `jr` 指令跳转到 `0x80000000`。
+
+主要功能是准备固件启动所需的参数，并将 CPU 的控制权从复位代码移交给 OpenSBI。
+
+进入 OpenSBI 后，固件进一步初始化运行环境，并将控制权交给操作系统内核。GDB 在 `0x80200000` 成功命中内核入口断点，验证了 CPU 从复位地址到内核入口的启动流程。
 
 ---
 
-### Challenge：本次实验中无 Challenge 题目
+### Challenge
 
-**扩展知识：**
-
-现代笔记本启动流程：CPU 先进入 UEFI 固件，由固件发现并启动引导程序，再装载操作系统。它与本实验相同之处是分阶段交接控制权；真实 PC 的固件、设备发现与启动介质更复杂。
+本次实验中无 Challenge 题目
 
 ---
 
 ## 五、测试与验证
 
-最终执行：
-
-~~~bash
-make -B -j2
-make qemu
-make grade
-~~~
-
-make qemu 按框架设计永久循环。记录脚本观察到输出后主动终止终端启动的 QEMU；日志中的 terminating on signal 15 是清理动作，不是内核提前崩溃。
-
-提供的实验框架中缺少 grade.sh，本次补充了针对实验一要求的本地验证脚本，经测试，4/4 PASS 四项检查均能通过。
-
-| 检查 | 结果 | 证据 |
-|------|------|------|
-| 框架全部源文件构建 | 通过 | [build.log](validation/build.log) |
-| 启动输出并持续运行 | PASS | [qemu.log](validation/qemu.log)、[boot.log](validation/boot.log) |
-| MROM → OpenSBI → 内核 | PASS | [gdb.log](validation/gdb.log) |
-| Makefile 的 make debug 实际启动 | PASS | [debug-target.log](validation/debug-target.log) |
-| 8 KiB 栈与 16 字节对齐 | PASS | GDB 栈检查 |
-| 初始化实参与实际 BSS 边界 | PASS | GDB 初始化检查 |
-| 本地 grade 汇总 | 4/4 PASS | [grade.log](validation/grade.log)、[results.json](validation/results.json) |
-
 **测试运行截图：**
 
-本地测试的终端截图记录如下：
+1.在实验目录执行 `make -B -j2`，通过 Makefile 完成源代码编译、目标文件链接以及内核镜像生成。
 
-编译截图（make -B -j2）：
+![内核编译截图](./images/build.png)
 
-![编译终端截图](./images/build.png)
+2.使用 `make debug` 启动 QEMU，并通过 `make gdb` 连接调试器。GDB 显示 CPU 初始 PC 为 `0x1000`。随后通过 `x/8i $pc` 和 `si` 查看并逐条执行复位代码，观察相关寄存器的变化。
 
-启动截图（make qemu）：OpenSBI 下一阶段地址为 0x80200000，运行模式为 S-mode，内核输出 (THU.CST) os is loading ...。
+![CPU复位指令及寄存器变化](./images/prac2_1.png)
 
-![QEMU 启动终端截图](./images/qemu.png)
+3.执行复位代码最后的跳转指令后，CPU 进入 OpenSBI 入口 `0x80000000`。在 `0x80200000` 设置硬件执行断点并继续运行，GDB 成功在 `kern_entry` 处暂停，确认 CPU 到达内核入口。
 
-本地测试截图上半部分（make grade）：展示复位 PC 0x1000、六条复位指令、进入 OpenSBI 0x80000000 及内核入口 0x80200000。
+![OpenSBI与内核入口调试](./images/prac2_2.png)
 
-![GDB 启动链终端截图](./images/gdb_startup.png)
+4.在 GDB 中继续运行后，QEMU 终端显示 OpenSBI v0.4 的启动信息，并输出 `(THU.CST) os is loading ...`，说明内核能够继续执行初始化及控制台输出代码。
 
-本地测试截图下半部分（同一次 make grade）：展示 sp = bootstacktop = 0x80203000、空 BSS 的 memset 参数与最终 4/4 PASS。
+![内核启动运行结果](./images/prac2_3.png)
 
-![本地测试结果终端截图](./images/test_result.png)
-
-编译截图中保留了 WSL 挂载目录的文件时间偏差警告；本次仍完成镜像生成，后续启动与四项本地检查通过。memset 的源码变量显示受优化影响，实际入口寄存器和段边界确认长度为 0；此次未声称验证非空 BSS 清零。
-
-目录整理后，从 code/ 重新执行构建、启动和本地 grade，并将最终日志写入 report/validation/，记录完整的实际输出。
+通过上述实验，验证了 CPU 从复位地址 `0x1000` 开始执行，经过 OpenSBI 固件，最终进入内核入口 `0x80200000` 的启动过程。
 
 ---
 
@@ -451,26 +244,24 @@ make qemu 按框架设计永久循环。记录脚本观察到输出后主动终�
 
 **重要知识点及其与 OS 原理的关系、差异：**
 
-| 知识点 | 含义 | 对应 OS 原理及关系、差异 |
-|--------|------|--------------------------|
-| 复位、固件与内核交接 | 分阶段建立环境并转移控制权 | 对应系统引导。本实验使用固定虚拟平台，真实机器还涉及设备发现和引导介质 |
-| 链接脚本与镜像 | 明确代码、数据和入口的位置 | 对应装载与地址布局。ELF 包含段和调试信息，裸镜像只有被装载的字节 |
-| 栈与 ABI | C 调用需要合法且对齐的栈 | 对应执行上下文。本实验只有启动栈，没有线程切换 |
-| BSS 初始化 | 自行提供 C 全局对象初始化环境 | 对应运行时建立。本次段为空，仍需核对范围，不能冒充非空清零证据 |
-| SBI 与特权级 | S-mode 经 ecall 请求 M-mode 固件服务 | 对应受控跨级调用。不同于用户进程向内核发起的系统调用 |
-| 格式化输出与调试 | 将状态转为可观察的字符、指令和寄存器 | 对应可观测性。输出证明路径执行，GDB 进一步确定执行位置与状态 |
+| **知识点**                | **含义**                                                     | **对应 OS 原理及关系、差异**                                 |
+| ------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| **Bootloader 与 OpenSBI** | OpenSBI 是 RISC-V 平台上的底层固件，运行在 M-mode，负责初始化处理器的基本运行环境，并将控制权交给操作系统内核。 | 对应操作系统的引导过程。内核无法在硬件加电后直接运行，需要先由固件完成必要的初始化。本实验中，CPU 从复位地址 `0x1000` 开始执行，随后进入 OpenSBI，最终跳转到 `0x80200000` 执行内核。与真实计算机相比，QEMU 简化了硬件检测和启动设备管理等过程。 |
+| **链接脚本与内存布局**    | 链接脚本规定程序入口地址，以及代码段、数据段等在内存中的排列方式。本实验通过 `kernel.ld` 将内核入口设置在 `0x80200000`。 | 对应程序装载与内存地址管理。链接脚本确定程序在链接阶段使用的地址布局，而加载器负责将程序放入相应的内存位置。两者需要相互配合，才能保证指令和数据被正确访问。本实验采用相对固定的内存布局，尚未涉及完整操作系统中的虚拟地址空间管理。 |
+| **内核栈初始化**          | 在 `entry.S` 中，通过 `la sp, bootstacktop` 将栈指针设置为预留的内核栈顶，为后续 C 语言函数执行提供栈空间。 | 对应函数调用机制和 RISC-V ABI。函数执行通常需要栈来保存局部变量、返回地址和部分寄存器。普通应用程序的初始栈由运行环境准备，而本实验中的内核必须自行建立启动栈。此外，该实验只有一个初始内核栈，尚未涉及多进程或多线程的独立栈管理。 |
+| **SBI 与 `ecall` 指令**   | SBI 是 RISC-V 操作系统与底层固件之间的标准接口。运行在 S-mode 的内核通过 `ecall` 指令请求 M-mode 的 OpenSBI 提供控制台输出等服务。 | 对应处理器特权级管理与系统调用机制。两者都利用异常机制实现不同特权级之间的受控交互，但调用层次不同：用户态系统调用通常是 U-mode 请求 S-mode 内核服务，而 SBI 调用是 S-mode 内核请求 M-mode 固件服务。本实验通过字符输出展示了这一机制。 |
 
 **OS 原理中重要但本实验没有覆盖的知识点：**
 
-对于一个功能完备的操作系统来说，当前实验还未实现进程管理、CPU 调度、虚拟内存与页面置换、用户态系统调用、并发同步及文件系统这些重要的功能。本次实现的“最小可执行内核”仅仅建立了后续实验启动和调试的基础，尚不具备完整功能，距离完整的操作系统还很遥远。
+对于一个功能完备的操作系统来说，lab1还没有进程管理、CPU 调度、虚拟内存与页面置换、用户态系统调用、并发同步及文件系统这些重要的功能。本次实现的“最小可执行内核”仅仅建立了后续实验启动和调试的基础，尚不具备完整功能，距离完整的操作系统还很遥远。
 
-### AI 协作开发的经验
+**AI 协作学习的经验**
 
-通过本次实验，我们总结了以下几点和AI协作开发时的注意事项：
+通过本次实验，我们总结了以下几点使用 AI 辅助学习的经验：
 
-1. 给AI提供资料时要尽可能完整，避免出现信息遗漏导致结果偏离预期。先让 AI 阅读完整的实验框架并理解，防止重复实现已经提供的内核。
-2. 提示词应明确依赖、接口和前后置条件，并与实际修改同步，结构化的框架往往更有利于 AI 理解与工作。
-3. 编译通过不能证明启动成功。本次实验中曾有故障在 OpenSBI 下一阶段地址，此时应由日志定位，不能想当然地认为是入口源码的问题。
-4. 修改范围应与证据对应，需要修改的部分与应该保留的部分要严格控制好。每一处都要对应到一个具体现象或具体缺口。
+1. 使用 AI 分析实验代码时，应提供完整的相关源码和实验要求，避免因为上下文不足而得到不适用于当前项目的解释。
+2. 对于汇编指令和寄存器变化，不能只依赖 AI 的分析，还需要通过 GDB 的实际输出进行验证。
+3. 不同版本的 QEMU 和 OpenSBI 可能具有不同的启动代码和运行结果，因此应以本次实验环境中的实际观察为准。
+4. 编译成功不代表内核能够正常启动，需要结合 QEMU 的运行输出和 GDB 的断点调试，判断程序是否真正执行到内核入口。
 
 ---
