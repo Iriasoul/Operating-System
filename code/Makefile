@@ -1,4 +1,4 @@
-PROJ	:= lab1
+PROJ	:= lab2
 EMPTY	:=
 SPACE	:= $(EMPTY) $(EMPTY)
 SLASH	:= /
@@ -13,6 +13,9 @@ ifndef QEMU
 QEMU := qemu-system-riscv64
 endif
 
+ifndef SPIKE
+SPIKE := spike
+endif
 
 # eliminate default suffix rules
 .SUFFIXES: .c .S .h
@@ -25,16 +28,14 @@ HOSTCC		:= gcc
 HOSTCFLAGS	:= -Wall -O2
 
 GDB		:= $(GCCPREFIX)gdb
-GDB_PORT ?= 1234
-PYTHON ?= python3
 
 CC		:= $(GCCPREFIX)gcc
-CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror
+CFLAGS  := -mcmodel=medany -std=gnu99 -Wno-unused -Werror 
 CFLAGS	+= -fno-builtin -Wall -O2 -nostdinc $(DEFS)
 CFLAGS	+= -fno-stack-protector -ffunction-sections -fdata-sections
 CFLAGS	+= -g
+CFLAGS2 = $(CFLAGS) -D ucore_test
 CTYPE	:= c S
-
 LD      := $(GCCPREFIX)ld
 LDFLAGS	:= -m elf64lriscv
 LDFLAGS	+= -nostdlib --gc-sections
@@ -65,6 +66,7 @@ listf_cc = $(call listf,$(1),$(CTYPE))
 
 # for cc
 add_files_cc = $(call add_files,$(1),$(CC),$(CFLAGS) $(3),$(2),$(4))
+add_files_cc2 = $(call add_files,$(1),$(CC),$(CFLAGS2) $(3),$(2),$(4))
 create_target_cc = $(call create_target,$(1),$(2),$(3),$(CC),$(CFLAGS))
 
 # for hostcc
@@ -83,7 +85,7 @@ match = $(shell echo $(2) | $(AWK) '{for(i=1;i<=NF;i++){if(match("$(1)","^"$$(i)
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 # include kernel/user
 
-INCLUDE	+= libs 
+INCLUDE	+= libs/
 
 CFLAGS	+= $(addprefix -I,$(INCLUDE))
 
@@ -96,22 +98,22 @@ $(call add_files_cc,$(call listf_cc,$(LIBDIR)),libs,)
 
 KINCLUDE	+= kern/debug/ \
 			   kern/driver/ \
-			   kern/trap/ \
-			   kern/libs/\
 			   kern/mm/ \
 			   kern/arch/
 
 KSRCDIR		+= kern/init \
-			   kern/debug \
 			   kern/libs \
+			   kern/debug \
 			   kern/driver \
-			   kern/trap \
 			   kern/mm
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
 
+ifeq ($(MAKECMDGOALS),test)
+$(call add_files_cc2,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
+else
 $(call add_files_cc,$(call listf_cc,$(KSRCDIR)),kernel,$(KCFLAGS))
-
+endif
 KOBJS	= $(call read_packet,kernel libs)
 
 # create kernel target
@@ -157,44 +159,57 @@ endif
 TARGETS: $(TARGETS)
 
 .DEFAULT_GOAL := TARGETS
-
-.PHONY: qemu 
+.PHONY: qemu spike test
 qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
-#	$(V)$(QEMU) -kernel $(UCOREIMG) -nographic
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG)
+		-device loader,file=$(UCOREIMG),addr=0x80200000
 
 debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG) \
-		-gdb tcp:127.0.0.1:$(GDB_PORT) -S
+		-device loader,file=$(UCOREIMG),addr=0x80200000\
+		-s -S
 
 gdb:
-	$(GDB) \
+	riscv64-unknown-elf-gdb \
     -ex 'file bin/kernel' \
     -ex 'set arch riscv:rv64' \
-    -ex 'target remote 127.0.0.1:$(GDB_PORT)'
+    -ex 'target remote localhost:1234'
 
-	
+test: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
+	$(V)$(QEMU) \
+		-machine virt \
+		-nographic \
+		-bios default \
+		-device loader,file=$(UCOREIMG),addr=0x80200000
+spike: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
+	$(V)$(SPIKE) $(UCOREIMG)
+
 .PHONY: grade touch
 
 GRADE_GDB_IN	:= .gdb.in
 GRADE_QEMU_OUT	:= .qemu.out
 HANDIN			:= proj$(PROJ)-handin.tar.gz
 
-TOUCH_FILES		:= kern/trap/trap.c
+TOUCH_FILES		:=
 
 MAKEOPTS		:= --quiet --no-print-directory
 
+GRADE_TMP	:= /tmp/lab2_grade
+
 grade:
 	$(V)$(MAKE) $(MAKEOPTS) clean
-	$(V)QEMU="$(QEMU)" GDB="$(GDB)" PYTHON="$(PYTHON)" $(SH) tools/grade.sh
+	$(V)$(RM) -rf $(GRADE_TMP)
+	$(V)$(MKDIR) $(GRADE_TMP)
+	$(V)tar -C . --exclude=.git --exclude=.vscode --exclude=vcs -cf - . | tar -C $(GRADE_TMP) -xf -
+	$(V)python3 tools/inject.py $(GRADE_TMP)
+	$(V)cd $(GRADE_TMP) && $(SH) tools/grade.sh
+	$(V)$(RM) -rf $(GRADE_TMP)
 
 touch:
 	$(V)$(foreach f,$(TOUCH_FILES),$(TOUCH) $(f))
@@ -223,10 +238,3 @@ tags:
 	$(V)find . -type f -name "*.[chS]" >cscope.files
 	$(V)cscope -bq 
 	$(V)ctags -L cscope.files
-
-.PHONY: check check-gdb
-check: $(UCOREIMG)
-	$(V)$(PYTHON) tools/verify_lab1.py --mode boot --qemu "$(QEMU)" --gdb "$(GDB)"
-
-check-gdb: $(UCOREIMG)
-	$(V)$(PYTHON) tools/verify_lab1.py --mode gdb --qemu "$(QEMU)" --gdb "$(GDB)"
