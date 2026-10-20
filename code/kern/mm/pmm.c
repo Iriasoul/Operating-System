@@ -34,7 +34,7 @@ static void check_alloc_page(void);
 
 // init_pmm_manager - initialize a pmm_manager instance
 static void init_pmm_manager(void) {
-    pmm_manager = &default_pmm_manager;
+    pmm_manager = &best_fit_pmm_manager;
     cprintf("memory management: %s\n", pmm_manager->name);
     pmm_manager->init();
 }
@@ -62,6 +62,90 @@ size_t nr_free_pages(void) {
 }
 
 //lab2 function1 YOUR CODE
+/*
+ * page_init - turn the physical memory reported by the device tree into Page
+ * descriptors, keep the pages already occupied by the system reserved, and
+ * hand the remaining whole pages to the current pmm manager.
+ *
+ * Physical layout after this function (default 128MiB):
+ *   [DRAM_BASE, KERNEL_BEGIN_PADDR)             firmware (OpenSBI)
+ *   [KERNEL_BEGIN_PADDR, end)                   kernel image
+ *   [freemem_pa, freemem_pa + (npage - nbase) * sizeof(struct Page))
+ *                                               Page descriptor array
+ *   [free_start_pa, npage << PGSHIFT)           free pages for the manager
+ */
+static void
+page_init(void) {
+    // the boot mapping translates KERNBASE.. linearly to DRAM_BASE.., and
+    // every PADDR/pa2page call below depends on this offset
+    va_pa_offset = PHYSICAL_MEMORY_OFFSET;
+
+    uint64_t mem_base = get_memory_base();
+    uint64_t mem_size = get_memory_size();
+    cprintf("page_init: detected physical memory base 0x%016lx, size 0x%016lx\n",
+            mem_base, mem_size);
+
+    // this framework only models one DRAM region starting at DRAM_BASE
+    if (mem_base != DRAM_BASE) {
+        panic("page_init: unsupported memory base 0x%016lx", mem_base);
+    }
+    if (mem_size == 0) {
+        panic("page_init: zero-length physical memory");
+    }
+    uint64_t mem_end = mem_base + mem_size;
+    if (mem_end < mem_base) {
+        panic("page_init: memory range overflow");
+    }
+    if (mem_end > PHYSICAL_MEMORY_END) {
+        mem_end = PHYSICAL_MEMORY_END;
+    }
+
+    // a partial trailing page is not manageable
+    npage = PPN(mem_end);
+    if (npage <= nbase) {
+        panic("page_init: no manageable page (npage = %lu)", (unsigned long)npage);
+    }
+
+    // npage is bounded by PPN(PHYSICAL_MEMORY_END), so the descriptor count
+    // and size computations below cannot overflow
+    size_t nr_desc = npage - nbase;
+
+    extern char end[];  // virtual address of the end of the kernel image
+    uintptr_t freemem_va = ROUNDUP((uintptr_t)end, PGSIZE);
+    uintptr_t freemem_pa = PADDR(freemem_va);
+    uintptr_t free_start_va = ROUNDUP(freemem_va + nr_desc * sizeof(struct Page), PGSIZE);
+    uintptr_t free_start_pa = PADDR(free_start_va);
+    size_t free_start_ppn = PPN(free_start_pa);
+
+    // validate the layout before writing anything into the array area
+    if (PPN(freemem_pa) >= npage) {
+        panic("page_init: kernel image out of managed memory");
+    }
+    if (free_start_ppn > npage) {
+        panic("page_init: no room for %lu page descriptors", (unsigned long)nr_desc);
+    }
+
+    pages = (struct Page *)freemem_va;
+    for (size_t i = 0; i < nr_desc; i ++) {
+        struct Page *p = pages + i;
+        p->flags = p->property = 0;
+        set_page_ref(p, 0);
+        SetPageReserved(p);
+    }
+
+    size_t nfree = npage - free_start_ppn;
+    cprintf("page_init: manage [0x%016lx, 0x%016lx), %lu pages, descriptors at 0x%016lx\n",
+            mem_base, mem_end, (unsigned long)nr_desc, freemem_va);
+    if (nfree > 0) {
+        cprintf("page_init: free pages [0x%016lx, 0x%016lx), %lu pages\n",
+                free_start_pa, (uintptr_t)npage << PGSHIFT, (unsigned long)nfree);
+        // the First-Fit manager requires every registered page to be
+        // Reserved before init_memmap
+        init_memmap(pa2page(free_start_pa), nfree);
+    } else {
+        cprintf("page_init: no whole free page left for the pmm manager\n");
+    }
+}
 
 /* pmm_init - initialize the physical memory management */
 void pmm_init(void) {
