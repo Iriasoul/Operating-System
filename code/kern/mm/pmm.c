@@ -4,6 +4,12 @@
 #ifdef UCORE_BUDDY_TEST
 #include <buddy_test.h>
 #endif
+#ifdef UCORE_SLUB
+#include <slub.h>
+#endif
+#ifdef UCORE_SLUB_TEST
+#include <slub_test.h>
+#endif
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -183,6 +189,18 @@ void pmm_init(void) {
 #ifdef UCORE_BUDDY_TEST
     // real-memory buddy behavior tests, after the manager's structural check
     buddy_run_live_tests();
+#endif
+
+#ifdef UCORE_SLUB
+    // object allocator on top of the buddy manager: legal only after the
+    // real pages are registered (page_init) and the manager has been checked
+    slub_init();
+#endif
+
+#ifdef UCORE_SLUB_TEST
+    // dedicated SLUB behavior tests: run on the freshly initialized, empty
+    // allocator; they hand every page back before the boot continues
+    slub_run_tests();
 #endif
 
     extern char boot_page_table_sv39[];
