@@ -5,6 +5,18 @@ SLASH	:= /
 
 V       := @
 
+# physical page manager configuration: PMM=best_fit (default) or PMM=buddy.
+# The choice is a compile-time define consumed by kern/mm/pmm.c; the object
+# directory depends on PMM, so switching configs never reuses the other
+# configuration's object files and no manual make clean is required.
+PMM ?= best_fit
+ifneq ($(PMM),best_fit)
+ifneq ($(PMM),buddy)
+$(error unsupported PMM "$(PMM)": use best_fit or buddy)
+endif
+DEFS += -D UCORE_PMM_BUDDY
+endif
+
 #ifndef GCCPREFIX
 GCCPREFIX := riscv64-unknown-elf-
 #endif
@@ -53,8 +65,17 @@ SH		:= sh
 TR		:= tr
 TOUCH	:= touch -c
 
-OBJDIR	:= obj
+OBJDIR	:= obj/$(PMM)
 BINDIR	:= bin
+
+# bin/.pmm_config remembers which PMM the linked images came from. Objects
+# live in per-PMM objdirs, so after a config switch without make clean the
+# shared bin/kernel would look newer than the other config's objects and
+# never relink; force it instead.
+RELINK_PMM := $(shell cat $(BINDIR)/.pmm_config 2>/dev/null)
+ifneq ($(RELINK_PMM),$(PMM))
+KERNEL_FORCE := FORCE
+endif
 
 ALLOBJS	:=
 ALLDEPS	:=
@@ -121,9 +142,10 @@ kernel = $(call totarget,kernel)
 
 $(kernel): tools/kernel.ld
 
-$(kernel): $(KOBJS)
+$(kernel): $(KOBJS) $(KERNEL_FORCE)
 	@echo + ld $@
 	$(V)$(LD) $(LDFLAGS) -T tools/kernel.ld -o $@ $(KOBJS)
+	@echo $(PMM) > $(BINDIR)/.pmm_config
 	@$(OBJDUMP) -S $@ > $(call asmfile,kernel)
 	@$(OBJDUMP) -t $@ | $(SED) '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(call symfile,kernel)
 
@@ -219,6 +241,9 @@ touch:
 
 print-%:
 	@echo $($(shell echo $(patsubst print-%,%,$@) | $(TR) [a-z] [A-Z]))
+
+FORCE:
+.PHONY: FORCE
 
 .PHONY: clean dist-clean handin packall tags
 clean:
