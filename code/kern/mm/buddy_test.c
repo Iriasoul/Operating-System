@@ -381,18 +381,39 @@ bt_case_split_merge_singles(void) {
 
 // ---- adjacency is not buddyhood ---------------------------------------------
 
+// allocate the whole 4-page zone as four single pages and map each returned
+// offset to its actual pointer; keeping every later free an
+// original-pointer/original-request free respects the no-partial-free
+// contract (freeing inside a multi-page block is not supported)
+static void
+bt_alloc_four_singles(struct Page *map[4]) {
+    size_t i;
+    for (i = 0; i < 4; i ++) {
+        map[i] = NULL;
+    }
+    for (i = 0; i < 4; i ++) {
+        struct Page *p = buddy_pmm_manager.alloc_pages(1);
+        BT_CHECK(p != NULL, "single-page request %lu failed", (unsigned long)i);
+        size_t off = bt_offset_of(p);
+        BT_CHECK(off < 4, "allocation returned offset %lu outside the 4-page zone",
+                 (unsigned long)off);
+        BT_CHECK(map[off] == NULL, "offset %lu handed out twice", (unsigned long)off);
+        map[off] = p;
+    }
+    BT_CHECK(bt_free() == 0, "zone not exhausted by four single pages");
+}
+
 static void
 bt_case_adjacent_not_buddy(void) {
     bt_case_begin("adjacency: neighbours 1,2 must not merge");
     bt_zone_reset();
     bt_register(0, 4);
-    struct Page *q = buddy_pmm_manager.alloc_pages(4);
-    BT_CHECK(q != NULL && bt_offset_of(q) == 0, "whole 4-page zone must come back at offset 0");
-    BT_CHECK(bt_free() == 0, "zone must be exhausted");
+    struct Page *map[4];
+    bt_alloc_four_singles(map);
     // free the MIDDLE pair: offsets 1 and 2 are adjacent but not buddies
-    buddy_pmm_manager.free_pages(&bt_pages[1], 1);
+    buddy_pmm_manager.free_pages(map[1], 1);
     BT_CHECK(bt_free() == 1, "first free must add exactly one page");
-    buddy_pmm_manager.free_pages(&bt_pages[2], 1);
+    buddy_pmm_manager.free_pages(map[2], 1);
     BT_CHECK(bt_free() == 2, "second free must add exactly one page");
     BT_CHECK(buddy_pmm_manager.alloc_pages(2) == NULL,
              "adjacent non-buddy singles must not satisfy a 2-page request");
@@ -406,9 +427,13 @@ bt_case_adjacent_not_buddy(void) {
     size_t o2 = bt_offset_of(s2);
     BT_CHECK((o1 == 1 && o2 == 2) || (o1 == 2 && o2 == 1),
              "second allocation must return the other freed page");
+    // hand every remaining allocation back, each with its original request
     buddy_pmm_manager.free_pages(s1, 1);
     buddy_pmm_manager.free_pages(s2, 1);
     BT_CHECK(bt_free() == 2, "free count not restored");
+    buddy_pmm_manager.free_pages(map[0], 1);
+    buddy_pmm_manager.free_pages(map[3], 1);
+    BT_CHECK(bt_free() == 4, "zone not whole after returning every allocation");
     buddy_pmm_manager.check();
     bt_case_pass();
 }
@@ -418,26 +443,28 @@ bt_case_buddy_pair(void) {
     bt_case_begin("buddyhood: neighbours 0,1 must merge");
     bt_zone_reset();
     bt_register(0, 4);
-    struct Page *q = buddy_pmm_manager.alloc_pages(4);
-    BT_CHECK(q != NULL && bt_offset_of(q) == 0, "whole 4-page zone must come back at offset 0");
+    struct Page *map[4];
+    bt_alloc_four_singles(map);
     // free the LOW pair: offsets 0 and 1 are true buddies
-    buddy_pmm_manager.free_pages(&bt_pages[0], 1);
+    buddy_pmm_manager.free_pages(map[0], 1);
     BT_CHECK(bt_free() == 1, "first free must add exactly one page");
-    buddy_pmm_manager.free_pages(&bt_pages[1], 1);
+    buddy_pmm_manager.free_pages(map[1], 1);
     BT_CHECK(bt_free() == 2, "second free must add exactly one page");
     struct Page *two = buddy_pmm_manager.alloc_pages(2);
     BT_CHECK(two != NULL, "true buddies 0,1 must satisfy a 2-page request");
     BT_CHECK(bt_offset_of(two) == 0, "merged order-1 block must start at offset 0");
     BT_CHECK(bt_free() == 0, "zone must be exhausted by the 2-page block");
+    // return the pages still held, then the 2-page block with its original
+    // request: the whole zone must reassemble into one 4-page block
+    buddy_pmm_manager.free_pages(map[2], 1);
+    BT_CHECK(bt_free() == 1, "third free must add exactly one page");
+    buddy_pmm_manager.free_pages(map[3], 1);
+    BT_CHECK(bt_free() == 2, "freeing pages 2,3 must merge into one order-1 block");
     buddy_pmm_manager.free_pages(two, 2);
-    BT_CHECK(bt_free() == 2, "freeing the 2-page request must restore 2 pages");
-    // reassemble the whole zone: 2,3 merge first, then join the block at 0
-    buddy_pmm_manager.free_pages(&bt_pages[2], 1);
-    buddy_pmm_manager.free_pages(&bt_pages[3], 1);
-    BT_CHECK(bt_free() == 4, "zone not whole after freeing everything");
-    struct Page *q2 = buddy_pmm_manager.alloc_pages(4);
-    BT_CHECK(q2 != NULL && bt_offset_of(q2) == 0, "whole zone must be recoverable at offset 0");
-    buddy_pmm_manager.free_pages(q2, 4);
+    BT_CHECK(bt_free() == 4, "zone not whole after returning every allocation");
+    struct Page *q = buddy_pmm_manager.alloc_pages(4);
+    BT_CHECK(q != NULL && bt_offset_of(q) == 0, "whole zone must be recoverable at offset 0");
+    buddy_pmm_manager.free_pages(q, 4);
     BT_CHECK(bt_free() == 4, "free count not restored");
     buddy_pmm_manager.check();
     bt_case_pass();
