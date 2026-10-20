@@ -1,6 +1,9 @@
 #include <default_pmm.h>
 #include <best_fit_pmm.h>
 #include <buddy_pmm.h>
+#ifdef UCORE_BUDDY_TEST
+#include <buddy_test.h>
+#endif
 #include <defs.h>
 #include <error.h>
 #include <memlayout.h>
@@ -163,12 +166,24 @@ void pmm_init(void) {
     // Now the first_fit/best_fit/worst_fit/buddy_system pmm are available.
     init_pmm_manager();
 
+#ifdef UCORE_BUDDY_TEST
+    // controlled-descriptor buddy behavior tests: run while the manager is
+    // initialized but real memory is not yet registered; they swap in a
+    // private Page array and restore the globals afterwards
+    buddy_run_fixture_tests();
+#endif
+
     // detect physical memory space, reserve already used memory,
     // then use pmm->init_memmap to create free page list
     page_init();
 
     // use pmm->check to verify the correctness of the alloc/free function in a pmm
     check_alloc_page();
+
+#ifdef UCORE_BUDDY_TEST
+    // real-memory buddy behavior tests, after the manager's structural check
+    buddy_run_live_tests();
+#endif
 
     extern char boot_page_table_sv39[];
     satp_virtual = (pte_t*)boot_page_table_sv39;

@@ -6,15 +6,37 @@ SLASH	:= /
 V       := @
 
 # physical page manager configuration: PMM=best_fit (default) or PMM=buddy.
-# The choice is a compile-time define consumed by kern/mm/pmm.c; the object
-# directory depends on PMM, so switching configs never reuses the other
-# configuration's object files and no manual make clean is required.
+# PMM=buddy BUDDY_TEST=1 additionally builds kern/mm/buddy_test.c with
+# -D UCORE_BUDDY_TEST and runs the dedicated buddy behavior tests at boot;
+# enabling BUDDY_TEST without PMM=buddy is rejected. The effective
+# configuration is named PMMCFG: compile-time defines come from DEFS, object
+# files live in obj/$(PMMCFG), and bin/.pmm_config records $(PMMCFG), so
+# switching between best_fit, buddy and buddy_test never reuses the other
+# configuration's object files or images and no manual make clean is needed.
 PMM ?= best_fit
-ifneq ($(PMM),best_fit)
-ifneq ($(PMM),buddy)
+BUDDY_TEST ?= 0
+ifneq ($(BUDDY_TEST),0)
+ifneq ($(BUDDY_TEST),1)
+$(error unsupported BUDDY_TEST "$(BUDDY_TEST)": use 0 or 1)
+endif
+endif
+
+ifeq ($(PMM),best_fit)
+PMMCFG := best_fit
+ifneq ($(BUDDY_TEST),0)
+$(error BUDDY_TEST=$(BUDDY_TEST) requires PMM=buddy)
+endif
+else
+ifeq ($(PMM),buddy)
+PMMCFG := buddy
+DEFS += -D UCORE_PMM_BUDDY
+ifneq ($(BUDDY_TEST),0)
+PMMCFG := buddy_test
+DEFS += -D UCORE_BUDDY_TEST
+endif
+else
 $(error unsupported PMM "$(PMM)": use best_fit or buddy)
 endif
-DEFS += -D UCORE_PMM_BUDDY
 endif
 
 #ifndef GCCPREFIX
@@ -65,15 +87,16 @@ SH		:= sh
 TR		:= tr
 TOUCH	:= touch -c
 
-OBJDIR	:= obj/$(PMM)
+OBJDIR	:= obj/$(PMMCFG)
 BINDIR	:= bin
 
-# bin/.pmm_config remembers which PMM the linked images came from. Objects
-# live in per-PMM objdirs, so after a config switch without make clean the
-# shared bin/kernel would look newer than the other config's objects and
-# never relink; force it instead.
+# bin/.pmm_config remembers which configuration the linked images came from.
+# Objects live in per-config objdirs, so after a config switch without make
+# clean the shared bin/kernel would look newer than the other config's
+# objects and never relink; force it instead. The identity includes the test
+# switch (buddy vs buddy_test).
 RELINK_PMM := $(shell cat $(BINDIR)/.pmm_config 2>/dev/null)
-ifneq ($(RELINK_PMM),$(PMM))
+ifneq ($(RELINK_PMM),$(PMMCFG))
 KERNEL_FORCE := FORCE
 endif
 
@@ -145,7 +168,7 @@ $(kernel): tools/kernel.ld
 $(kernel): $(KOBJS) $(KERNEL_FORCE)
 	@echo + ld $@
 	$(V)$(LD) $(LDFLAGS) -T tools/kernel.ld -o $@ $(KOBJS)
-	@echo $(PMM) > $(BINDIR)/.pmm_config
+	@echo $(PMMCFG) > $(BINDIR)/.pmm_config
 	@$(OBJDUMP) -S $@ > $(call asmfile,kernel)
 	@$(OBJDUMP) -t $@ | $(SED) '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(call symfile,kernel)
 
