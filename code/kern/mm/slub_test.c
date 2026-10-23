@@ -30,7 +30,8 @@
  *   L-cases - layout acceptance of the current implementation, using the
  *     published facts only: 48-byte in-page headers, per-class capacities
  *     253/126/63/31/15/7/3/1, a slot stride equal to the class size, and
- *     the ceil((size+48)/4096)->power-of-two occupancy of large blocks. If
+ *     the ceil((size+48)/4096)->power-of-two occupancy of large blocks, and
+ *     full -> partial -> full slot reuse at the published capacity. If
  *     the layout legitimately changes, these numbers change with it; they
  *     are kept in their own cases so the contract cases stay valid.
  *
@@ -581,6 +582,64 @@ st_case_layout_large(void) {
     st_case_pass();
 }
 
+/* The published 1024-byte class holds three objects per page. Unlike the
+   partial-page reuse in the stride case, this exercises both transitions
+   out of and back into the full list while two objects keep the page live. */
+static void
+st_case_layout_full_reuse(void) {
+    st_case_begin("layout full reuse: 1024-byte slab full -> partial -> full");
+    size_t before = nr_free_pages();
+    void *obj[3];
+    size_t i, j;
+    for (i = 0; i < 3; i ++) {
+        obj[i] = kmalloc(1024);
+        ST_CHECK(obj[i] != NULL, "1024-byte object %lu failed", (unsigned long)i);
+        ST_CHECK((((uintptr_t)obj[i]) & 15) == 0,
+                 "object %lu is not 16-byte aligned", (unsigned long)i);
+        ST_CHECK(((uintptr_t)obj[i] / PGSIZE) == ((uintptr_t)obj[0] / PGSIZE),
+                 "three 1024-byte objects must share one slab page");
+        for (j = 0; j < i; j ++) {
+            ST_CHECK(!st_overlap((uintptr_t)obj[i], 1024, (uintptr_t)obj[j], 1024),
+                     "objects %lu and %lu overlap", (unsigned long)i, (unsigned long)j);
+        }
+        st_fill(obj[i], 1024, (unsigned char)(0xF0 + i));
+    }
+    ST_CHECK(nr_free_pages() == before - 1, "full slab must occupy exactly one page");
+    for (i = 0; i < 3; i ++) {
+        st_verify(obj[i], 1024, (unsigned char)(0xF0 + i));
+    }
+    slub_check();
+
+    uintptr_t released = (uintptr_t)obj[1];
+    kfree(obj[1]);
+    obj[1] = NULL;
+    ST_CHECK(nr_free_pages() == before - 1,
+             "freeing one slot must retain the page with two live objects");
+    st_verify(obj[0], 1024, 0xF0);
+    st_verify(obj[2], 1024, 0xF2);
+    slub_check();
+
+    obj[1] = kmalloc(1024);
+    ST_CHECK(obj[1] != NULL, "allocation from the formerly full slab failed");
+    ST_CHECK((uintptr_t)obj[1] == released, "the sole freed slot was not reused");
+    ST_CHECK(nr_free_pages() == before - 1, "slot reuse must not allocate another page");
+    st_fill(obj[1], 1024, 0xF3);
+    st_verify(obj[0], 1024, 0xF0);
+    st_verify(obj[1], 1024, 0xF3);
+    st_verify(obj[2], 1024, 0xF2);
+    slub_check();
+    cprintf("[SLUB Test] full reuse: same slot, one page held, live data intact\n");
+
+    kfree(obj[2]);
+    kfree(obj[0]);
+    ST_CHECK(nr_free_pages() == before - 1, "last live object must retain its page");
+    st_verify(obj[1], 1024, 0xF3);
+    kfree(obj[1]);
+    ST_CHECK(nr_free_pages() == before, "full-reuse case did not restore all pages");
+    slub_check();
+    st_case_pass();
+}
+
 // entry point, called from pmm_init() in the UCORE_SLUB_TEST build only
 
 void
@@ -597,6 +656,7 @@ slub_run_tests(void) {
     st_case_layout_capacity();
     st_case_layout_stride();
     st_case_layout_large();
+    st_case_layout_full_reuse();
     /* closing case: empty allocator, structurally consistent */
     st_case_begin("final: empty allocator, structurally consistent");
     slub_check();

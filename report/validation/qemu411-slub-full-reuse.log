@@ -1,0 +1,80 @@
+
+OpenSBI v0.4 (Jul  2 2019 11:53:53)
+   ____                    _____ ____ _____
+  / __ \                  / ____|  _ \_   _|
+ | |  | |_ __   ___ _ __ | (___ | |_) || |
+ | |  | | '_ \ / _ \ '_ \ \___ \|  _ < | |
+ | |__| | |_) |  __/ | | |____) | |_) || |_
+  \____/| .__/ \___|_| |_|_____/|____/_____|
+        | |
+        |_|
+
+Platform Name          : QEMU Virt Machine
+Platform HART Features : RV64ACDFIMSU
+Platform Max HARTs     : 8
+Current Hart           : 0
+Firmware Base          : 0x80000000
+Firmware Size          : 112 KB
+Runtime SBI Version    : 0.1
+
+PMP0: 0x0000000080000000-0x000000008001ffff (A)
+PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
+DTB Init
+HartID: 0
+DTB Address: 0x82200000
+Physical Memory from DTB:
+  Base: 0x0000000080000000
+  Size: 0x0000000008000000 (128 MB)
+  End:  0x0000000087ffffff
+DTB init completed
+(THU.CST) os is loading ...
+Special kernel symbols:
+  entry  0xffffffffc02000d6 (virtual)
+  etext  0xffffffffc0204c32 (virtual)
+  edata  0xffffffffc020c018 (virtual)
+  end    0xffffffffc024cc74 (virtual)
+Kernel executable memory footprint: 307KB
+memory management: buddy_pmm_manager
+page_init: detected physical memory base 0x0000000080000000, size 0x0000000008000000
+page_init: manage [0x0000000080000000, 0x0000000088000000), 32768 pages, descriptors at 0xffffffffc024d000
+page_init: free pages [0x000000008038d000, 0x0000000088000000), 31859 pages
+buddy_check: 10 free blocks, 31859 free pages, orders consistent
+check_alloc_page() succeeded!
+[SLUB] enabled: 8 size classes (16..2048 bytes), large objects page-backed
+[SLUB Test] behavior tests on the freshly initialized allocator
+[SLUB Test] case 1: boundary: kmalloc(0), kfree(NULL), oversized requests
+[SLUB Test] case 1 PASS
+[SLUB Test] case 2: alignment: every return value 16-byte aligned, full-size writes
+[SLUB Test] case 2 PASS
+[SLUB Test] case 3: isolation: six 17-byte objects stay private
+[SLUB Test] case 3 PASS
+[SLUB Test] case 4: page hold: pages live exactly as long as their objects
+[SLUB Test] case 4 PASS
+[SLUB Test] case 5: large: four sizes live together, scrambled free
+[SLUB Test] case 5 PASS
+[SLUB Test] case 6: mixed: small and large interleaved, slub_check in between
+slub_check: 3 slabs (2 partial, 1 full), 2 large objects, consistent
+slub_check: 0 slabs (0 partial, 0 full), 0 large objects, consistent
+[SLUB Test] case 6 PASS
+[SLUB Test] case 7: exhaustion: real drain, clean failures, full recovery
+[SLUB Test] case 7 PASS
+[SLUB Test] case 8: layout capacity: 253/126/63/31/15/7/3/1 slots per page
+[SLUB Test] case 8 PASS
+[SLUB Test] case 9: layout stride: boundary sizes pick the minimal class
+[SLUB Test] case 9 PASS
+[SLUB Test] case 10: layout large: header 48, occupancy ceil->power of two
+[SLUB Test] case 10 PASS
+[SLUB Test] case 11: layout full reuse: 1024-byte slab full -> partial -> full
+slub_check: 1 slabs (0 partial, 1 full), 0 large objects, consistent
+slub_check: 1 slabs (1 partial, 0 full), 0 large objects, consistent
+slub_check: 1 slabs (0 partial, 1 full), 0 large objects, consistent
+[SLUB Test] full reuse: same slot, one page held, live data intact
+slub_check: 0 slabs (0 partial, 0 full), 0 large objects, consistent
+[SLUB Test] case 11 PASS
+[SLUB Test] case 12: final: empty allocator, structurally consistent
+slub_check: 0 slabs (0 partial, 0 full), 0 large objects, consistent
+[SLUB Test] case 12 PASS
+[SLUB Test] ALL TESTS PASSED (12 cases)
+satp virtual address: 0xffffffffc020b000
+satp physical address: 0x000000008020b000
+qemu-system-riscv64: terminating on signal 15 from pid 1159 (python3)

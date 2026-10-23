@@ -1,6 +1,6 @@
 # Lab2 提示词汇总
 
-本文件按照课程提示词模板汇总本实验的任务指令，采用 [PROMPT]、[RELY]、[GUARANTEE]、[SPECIFICATION] 四部分结构。对应实现与测试结果见 [report.md](report.md)。
+本文件按照课程提示词模板汇总本实验的任务指令，采用 [PROMPT]、[RELY]、[GUARANTEE]、[SPECIFICATION] 四部分结构。环境路径与运行指令已统一为当前 CompilerLab 和 QEMU 4.1.1 配置。对应实现与测试结果见 [report.md](report.md)。
 
 ## 提示词 1
 
@@ -561,7 +561,7 @@ Best-Fit 默认配置下，现有功能及原测试保持可运行。Buddy 配�
 - 若进行申请 3 页再释放的基本检查，应验证空闲页数先减少 4 再恢复，并清理临时验证改动。
 - 记录实际命令、结果及失败原因，不伪造 PASS。
 - 不为运行 Buddy 而修改官方 Best-Fit 测试。
-- 若官方 grade 因旧加载参数无法启动，报告具体问题，不把它解释为分配器失败或擅自改写官方评分逻辑。
+- 使用当前 QEMU 4.1.1 直接执行原有 make grade；若启动或评分失败，记录具体原因，不修改官方评分逻辑。
 ~~~~
 
 ## 提示词 4
@@ -661,7 +661,7 @@ check_alloc_page();
 
 6. 构建
 
-Makefile 已支持 PMM=best_fit / PMM=buddy，使用 obj/$(PMM) 隔离对象，并用 bin/.pmm_config 判断共享镜像是否需要强制重链。新增测试配置后，配置身份必须包含测试开关。不能只增加宏而继续复用普通 Buddy 对象或旧镜像。QEMU 运行目标使用 -kernel。工具链可在 WSL 的 /opt/riscv/bin 和 /opt/qemu/bin 中查找。
+Makefile 已支持 PMM=best_fit / PMM=buddy，使用 obj/$(PMM) 隔离对象，并用 bin/.pmm_config 判断共享镜像是否需要强制重链。新增测试配置后，配置身份必须包含测试开关。不能只增加宏而继续复用普通 Buddy 对象或旧镜像。QEMU 运行目标使用 -kernel。构建环境为 WSL 的 CompilerLab，交叉工具链位于 /opt/riscv-elf-toolchains/bin，QEMU 4.1.1 位于 /home/compiler/.local/opt/qemu-4.1.1/bin；source ~/.config/compilerlab/riscv-env.sh 后执行 export QEMU=/home/compiler/.local/opt/qemu-4.1.1/bin/qemu-system-riscv64。
 
 
 [GUARANTEE]
@@ -822,7 +822,7 @@ Requirements：
 验证：
 普通 Best-Fit → 普通 Buddy → Buddy 测试 → 普通 Buddy → Best-Fit。
 
-不 clean 切换也必须运行正确配置；普通 Buddy 模式不得残留专项测试执行。默认模式原有 Best-Fit 检查继续通过。官方评分若使用仓库外的加载兼容包装器，应明确记录包装器和命令，不能描述成原样 make grade 通过。
+不 clean 切换也必须运行正确配置；普通 Buddy 模式不得残留专项测试执行。默认模式原有 Best-Fit 检查继续通过。在当前 CompilerLab 中使用 QEMU 4.1.1 直接运行原有 make grade，并记录实际命令和结果。
 
 
 [本轮交付说明]
