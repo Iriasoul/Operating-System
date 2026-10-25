@@ -7,18 +7,16 @@
 | **实验名称** | Lab 2：物理内存管理 |
 | **小组成员** | 2412449-石晨昊、2410966-王策、2410668-吕昊远 |
 | **完成日期** | 2026-10-20 |
-| **实验分支** | `lab2` |
-| **完成范围** | 物理内存初始化、First-Fit 分析、Best-Fit、Buddy 及独立测试、物理内存发现问题、选做简化 SLUB 及独立测试 |
 
 ### 小组分工
 
 本次按三个相对完整的模块划分工作，每人均承担原理分析、提示词整理、实现核对和验证工作，跨模块接口共同复核。
 
-| 成员 | 负责的练习/模块 | 协作检查 |
-|------|----------------|----------|
-| 2412449-石晨昊 | 物理内存初始化；First-Fit 分析与 Best-Fit 实现；启动映射问题；物理内存发现问题 | 核对 Buddy、SLUB 使用的页描述符与地址转换约定 |
-| 2410966-王策 | Buddy System；受控夹具与真实内存测试；构建配置隔离及切换回归 | 核对 Best-Fit 与 Buddy 的分配、释放契约差异 |
-| 2410668-吕昊远 | 简化 SLUB；对象分配与资源恢复；独立行为、布局及耗尽测试 | 核对对象层向 Buddy 归还页面的参数与生命周期 |
+| 成员 | 负责的练习/模块 |
+|------|----------------|
+| 2412449-石晨昊 | 练习1，challenge |
+| 32410966-王策 | 练习3，分支任务 |
+| 2410668-吕昊远 | 练习1，challenge |
 
 报告分工与模块对应：
 
@@ -56,11 +54,11 @@
 
 小组使用的 AI 工具及模型如下：
 
-| 成员 | AI 编程工具 | 底层模型 | 使用方式 |
+| 成员 | AI 编程工具 | 底层模型 | 备注 |
 |------|------------|----------|----------|
-| 2412449-石晨昊 | Codex | GPT-6.1 sol | 根据结构化提示词完成模块，人工核对边界和结果 |
-| 2410966-王策 | Codex | GPT-6.1 sol | 将实现与测试分轮开展，核对分配契约和反例 |
-| 2410668-吕昊远 | Codex | GPT-6.1 sol | 分别进行 SLUB 实现与测试，区分行为契约和布局验收 |
+| 2412449-石晨昊 | Codex | GPT-6.1 sol | 无 |
+| 2410966-王策 | Codex | GPT-6.1 sol | 无 |
+| 2410668-吕昊远 | Codex | GPT-6.1 sol | 无 |
 
 ## 三、实验整体逻辑分析
 
@@ -68,7 +66,7 @@
 
 本实验解决的问题是：内核已经能够启动，但还需要知道哪些内存属于自己、哪些页面可以分配，以及怎样把页面交给不同大小的使用者。
 
-物理页分配器管理的是连续页面，SLUB 管理的是页面内部的对象。两者通过 `alloc_pages/free_pages` 连接。内核的高地址虚拟映射用于访问这些页面，但映射本身不等于页面已经空闲，也不等于对象已经分配。
+物理页分配器管理的是连续页面，SLUB 管理的是页面内部的对象。两者通过 `alloc_pages/free_pages` 连接。内核的高地址虚拟映射用于访问这些页面。
 
 ```mermaid
 flowchart TD
@@ -82,11 +80,11 @@ flowchart TD
     H --> I[kmalloc 与 kfree 管理对象]
 ```
 
-Buddy 夹具测试是这一正常流程中的特殊测试入口：它在真实 `page_init()` 之前临时替换描述符数组，完成后恢复全局状态并清空管理器；真实内存测试则在 `check_alloc_page()` 之后执行。SLUB 测试在 `slub_init()` 之后执行，不能重复初始化对象分配器。
+Buddy 夹具测试是这一正常流程中的特殊测试入口：它在真实 `page_init()` 之前临时替换描述符数组，完成后恢复全局状态并清空管理器；真实内存测试则在 `check_alloc_page()` 之后执行。SLUB 测试在 `slub_init()` 之后执行。
 
 ### 3.2 功能的逐步实现
 
-| 阶段 | 任务 | 为什么按此顺序 |
+| 阶段 | 任务 | 原因 |
 |------|------|----------------|
 | 1 | `page_init()` | 先确定物理范围、元数据和保留区，分配器才不会分出内核自身的页面 |
 | 2 | First-Fit 分析、Best-Fit 实现与默认启动 | 先建立连续页分配的基线，并完成默认官方评分 |
@@ -95,17 +93,7 @@ Buddy 夹具测试是这一正常流程中的特殊测试入口：它在真实 `
 | 5 | 简化 SLUB 实现与基本验证 | 在已验证的 Buddy 上增加对象粒度，保留底层分配信息 |
 | 6 | SLUB 独立专项测试与配置回归 | 验证对象隔离、布局、耗尽和跨层资源恢复，并检查配置互不污染 |
 
-六轮提示词收录于附录，并单独保存在 [prompt.md](prompt.md)。
-
-### 3.3 规格设计与提示词组织方法
-
-规格（spec）先回答调用者可以依赖什么，再约束实现需要保持什么。我们从实验要求和实际接口中提取前置条件、成功与失败的后置条件、状态不变量及验收方法。例如，Buddy 的“申请 3 页实际占用 4 页”既决定计数变化，也决定释放参数和测试期望，必须在实现与测试两轮中使用同一契约。
-
-提示词采用四部分组织：`[PROMPT]` 说明任务和修改边界；`[RELY]` 给出已有文件、接口、数据结构与初始化顺序；`[GUARANTEE]` 列明需要交付的函数、注册结构和构建配置；`[SPECIFICATION]` 按函数或场景规定参数约束、成功结果、失败行为和不变量。这样可以检查每条要求是否有对应实现和验证手段，也能防止 AI 为完成局部任务改写框架测试或其他模块。
-
-实现提示词主要规定公共行为及必要的结构约束，测试提示词则将其转化为可观察判据：显式列出占用表、合法的分配释放序列、失败前后的状态及最终资源恢复值。测试不复制被测算法来计算期望结果。First-Fit 与物理内存发现是分析题，直接说明推理依据；其余编程任务的规格设计见对应小节。
-
-各模块的规格表列出接口约定、状态不变量和验收方法。
+提示词保存在 [prompt.md](prompt.md)。
 
 ## 四、实验内容与实现
 
@@ -312,7 +300,7 @@ Buddy 分两轮编写规格。提示词 3 先固定页管理器的分配与释�
 
 **负责人：2412449-石晨昊。**
 
-内核通常从固件或引导程序提供的硬件描述获取内存布局，而不是逐地址尝试写入。本实验中，OpenSBI 向内核传递 DTB 地址，启动汇编保存 `a1`，`dtb_init()` 解析内存节点，再由 `get_memory_base/get_memory_size` 提供结果。启动日志中的基址为 `0x80000000`，大小为 `0x08000000`。
+内核通常从固件或引导程序提供的硬件描述获取内存布局。本实验中，OpenSBI 向内核传递 DTB 地址，启动汇编保存 `a1`，`dtb_init()` 解析内存节点，再由 `get_memory_base/get_memory_size` 提供结果。启动日志中的基址为 `0x80000000`，大小为 `0x08000000`。
 
 不同平台可使用不同来源：
 
@@ -367,7 +355,7 @@ kfree 时使用保存的 base、nr_pages 归还
 
 #### 规格设计与提示词组织
 
-提示词 5 的 `[RELY]` 先明确底层 Buddy 的原请求释放契约，`[GUARANTEE]` 限定对象分配接口与构建接入，`[SPECIFICATION]` 再分别描述初始化、小对象、大对象和检查函数。规格同时约束对象可用空间与底层页面生命周期，避免只验证返回了一个非空指针。
+提示词 5 的 `[RELY]` 先明确底层 Buddy 的原请求释放契约，`[GUARANTEE]` 限定对象分配接口与构建接入，`[SPECIFICATION]` 再分别描述初始化、小对象、大对象和检查函数。
 
 | 实现规格项目 | 具体约定 | 验收方法与覆盖情况 |
 |--------------|----------|--------------------|
@@ -415,6 +403,131 @@ kfree 时使用保存的 base、nr_pages 归还
 | `make PMM=buddy SLUB=1 SLUB_TEST=1` | `buddy_slub_test` | SLUB 专项测试 |
 
 三个开关均只接受 0/1。SLUB 和两种专项测试都要求 Buddy；SLUB_TEST 还要求 SLUB=1；BUDDY_TEST 与 SLUB/SLUB_TEST 互斥。普通构建不会运行专项测试。
+
+### 4.7 分支任务：GDB 调试页表查询过程
+
+**负责人：2410966-王策。** 使用普通 GDB 调试 QEMU 4.1.1 源码，使用 RISC-V GDB 连接 QEMU 的 GDB Stub，分别观察模拟器的地址翻译和内核指令执行。下面以 `memset()` 中的数据写入及 `kern_init` 的取指过程为例。
+
+#### 访存指令的地址转换
+
+本部分使用两个 GDB 配合调试：RISC-V GDB 连接 QEMU 的 GDB Stub，查看内核正在执行的指令和寄存器；普通 GDB 则直接调试带符号信息的 QEMU 4.1.1，观察模拟器如何处理这次访存。先在 Guest 中找到真实的数据写入指令，再在 QEMU 中跟踪相同地址，确认两边对应的是同一次访问。 在 `libs/string.c` 的 `memset()` 中，通过 `break memset` 和 `disassemble /r memset` 找到 `0xffffffffc0201736` 处的 `sb a1,-1(a5)`。这条指令把 `a1` 的低 8 位写入 `a5-1` 指向的地址。在第一次写入前，`a1=0`，由寄存器计算出的数据虚拟地址为 `0xffffffffc0206018`。这里要区分指令自身的 PC `0xffffffffc0201736` 和它要访问的数据地址，两者不是同一个地址。 ![memset 中的 sb 指令、寄存器和数据虚拟地址](images/1.png) 在普通 GDB 中对 `get_physical_address()` 设置 `addr == 0xffffffffc0206018 && access_type == 1` 的条件断点后，实际命中时 `addr` 与 Guest 中计算出的地址一致，`access_type=1` 表示数据 Store，`satp=0x8000000000080205` 表明此时已开启 Sv39 分页。 ![QEMU 捕获的数据 Store 地址及访问类型](images/3.png) 调用栈进一步给出了此次写入在 QEMU 中经过的路径： ```text sb a1,-1(a5)（Guest 指令）  → helper_ret_stb_mmu()  → store_helper()  → tlb_fill()  → riscv_cpu_tlb_fill()  → get_physical_address() ``` `store_helper()` 负责处理字节写入，`tlb_fill()` 说明这次访问没能直接使用已有的软件 TLB 映射；随后进入 RISC-V 专用的 `riscv_cpu_tlb_fill()`，由 `get_physical_address()` 根据当前分页模式查找物理地址。`riscv_cpu_tlb_fill()` 会检查 `get_physical_address()` 的返回值：翻译成功便调用 `tlb_set_page()` 保存映射和访问权限，失败则进入相应的异常处理。这条调用路径既说明了访存为什么会进入页表查询，也说明查询成功后并不是每次都要重查页表。 ![Store 触发的软件 TLB Fill 与 RISC-V 地址翻译调用栈](images/2.png) 为了看清这条 `sb` 如何完成虚实地址转换，继续沿这次 Store 的调用栈单步，记录了下面几个实际结果。 **（1）从指令算出数据虚拟地址。** 在 RISC-V GDB 中通过 `tbreak *0xffffffffc0201736` 停在 `sb a1,-1(a5)` 执行前。此时 `a0=0xffffffffc0206018`、`a1=0`、`a5=0xffffffffc0206019`。`sb` 的寻址方式是 `a5-1`，因此这次写入的数据虚拟地址是 `0xffffffffc0206018`，写入值为 `0`。`0xffffffffc0201736` 只是这条指令自身的 PC，并不是它访问的数据地址（见图 `1.png`）。 **（2）确认 QEMU 收到的是同一次写入。** 在普通 GDB 中设置条件断点： ```gdb break get_physical_address if addr == 0xffffffffc0206018 && access_type == 1 ``` 继续执行 Guest 的 `sb` 后，断点命中 `target/riscv/cpu_helper.c:158`。打印得到 `addr=0xffffffffc0206018`、`access_type=1`、`mmu_idx=1`，与 Guest 计算出的数据地址一致。调用栈显示这次访问依次经过 `helper_ret_stb_mmu()`、`store_helper()`、`tlb_fill()`、`riscv_cpu_tlb_fill()`，最终进入 `get_physical_address()`。说明本次 Store 没有直接使用已有的软件 TLB 映射，需要进行页表查询（见图 `2.png`、`3.png`）。 **（3）根据虚拟地址找到实际的 PTE。** QEMU 读取 `satp=0x8000000000080205`，确定采用 Sv39，根页表物理基址为 `0x80205000`。当前从根级开始查询，使用虚拟地址的 VPN[2] 作为索引： ```text idx      = (0xffffffffc0206018 >> 30) & 0x1ff = 0x1ff pte_addr = 0x80205000 + 0x1ff * 8        = 0x80205ff8 pte      = ldq_phys(cs->as, pte_addr)    = 0x200000cf ppn      = pte >> 10                      = 0x80000 ``` 在 `cpu_helper.c:256` 的 GDB 断点处，实际打印出 `base=0x80205000`、`idx=0x1ff`、`pte_addr=0x80205ff8`、`pte=0x200000cf` 和 `ppn=0x80000`。其中 `ldq_phys()` 是从模拟物理内存取出 PTE，右移 10 位则是提取其中的 PPN。PTE 的 V、R、W、X 位有效，说明根级表项本身就是可写的 1 GiB 叶子映射，不需要继续查下两级页表。 ![本次 Store 查到的根页表项及 PPN](images/4.png) **（4）计算写入位置对应的物理地址。** 对于根级 1 GiB 叶子项，QEMU 需要保留虚拟页号中的低 18 位，把它们与叶子 PTE 给出的 PPN 组合。`cpu_helper.c` 中的实际计算语句为： ```c *physical = (ppn | (vpn & ((1L << ptshift) - 1))) << PGSHIFT; ``` 此时 `ptshift=18`、`PGSHIFT=12`，因此： ```text vpn 低 18 位  = (0xffffffffc0206018 >> 12) & 0x3ffff = 0x206 物理页基址    = (0x80000 | 0x206) << 12 = 0x80206000 页内偏移      = 0xffffffffc0206018 & 0xfff = 0x18 最终物理地址  = 0x80206000 | 0x18 = 0x80206018 ``` 在 `cpu_helper.c:337` 处，GDB 打印出的 `*$store_pa_ptr` 为 `0x80206000`，再结合保存的虚拟地址计算页内偏移 `0x18`，最终得到 `0x80206018`。这与页表项计算结果一致。 ![Store 数据虚拟地址对应的物理页基址、偏移和最终物理地址](images/5.png) 因此，本次调试完整对应了 **`sb a1,-1(a5)` → 数据虚拟地址 `0xffffffffc0206018` → 查询 Sv39 根页表项 → 物理页基址 `0x80206000` → 实际物理地址 `0x80206018`** 的过程。QEMU 随后可以使用这个翻译结果填充软件 TLB，并完成对相应 Guest 内存位置的写入。
+
+#### Sv39 页表查询过程
+
+在 `target/riscv/cpu_helper.c` 中单步 `get_physical_address()`，可以将查询过程分成确定分页配置、定位页表项、检查页表项和计算物理地址四步。
+
+首先，函数从 `satp` 读取分页模式和根页表物理页号。 `satp=0x8000000000080205`，其 MODE 字段为 8，即 Sv39；根页表物理基址 `base=0x80205000`。Sv39 使用三级页表，每级索引 9 位，每个 PTE 占 8 字节，普通页的页内偏移为 12 位。GDB 在循环入口实际读到了 `levels=3`、`ptidxbits=9` 和 `base=0x80205000`。
+
+![Sv39 页表查询入口、根页表基址和分页参数](images/2a.png)
+
+接下来执行的代码是一个最多迭代三次的 `for` 循环，而不是三个彼此独立的循环。第一次 `ptshift=18`，使用虚拟地址中的 VPN[2] 查根页表；如果 PTE 指向下一级页表，就依次把 `ptshift` 减为 9、0，改用 VPN[1]、VPN[0] 继续查。
+
+循环中先计算索引，再定位当前 PTE：
+
+```c
+idx = (addr >> (PGSHIFT + ptshift)) & ((1 << ptidxbits) - 1);
+pte_addr = base + idx * ptesize;
+pte = ldq_phys(cs->as, pte_addr);
+ppn = pte >> PTE_PPN_SHIFT;
+```
+
+对于 `0xffffffffc02000d8` 和 `0xffffffffc0206018` 这两个内核高地址，根级索引均为 `0x1ff`（511），因此 `pte_addr=0x80205000+511×8=0x80205ff8`。其中 `ldq_phys()` 才是真正从 Guest 物理内存读取 8 字节 PTE 的操作；下一行 `pte >> 10` 只是从已经读出的 PTE 中提取物理页号，不会再访问一次页表。取指单步得到 `pte=0x200000cf`、`ppn=0x80000`，Store 查询也得到相同的根级 PTE。
+
+![取指查询中的根页表索引、PTE 地址和 PPN](images/2b.png)
+
+![数据 Store 查询中的相同根级 PTE](images/4.png)
+
+读取 PTE 后，QEMU 会先判断 `PTE_V` 是否有效，再根据 R/W/X 位区分叶子项和下一级页表指针，同时检查访问权限、特权级、大页对齐以及 A/D 位。本次 `PTE=0x200000cf` 的 V、R、W、X、A、D 位均为 1，属于根级的 1 GiB 叶子映射，所以可以直接计算物理地址，不必进入第二级页表。
+
+在物理地址计算处，QEMU 用叶子 PTE 的 PPN 与虚拟页号中的低位组合，得到包含在大页内的 4 KiB 物理页基址，再保留原虚拟地址的低 12 位页内偏移：
+
+```c
+*physical = (ppn | (vpn & ((1L << ptshift) - 1))) << PGSHIFT;
+```
+
+对 `kern_init` 取指地址 `0xffffffffc02000d8`，单步得到物理页基址 `0x80200000`、页内偏移 `0xd8`，因此完整物理地址为 `0x802000d8`。
+
+![取指地址的物理页基址、偏移和最终物理地址](images/2c.png)
+
+对前面 `memset()` 的 Store 地址 `0xffffffffc0206018`，查到的仍是同一个 1 GiB 叶子 PTE，但页内对应的物理页不同。GDB 得到物理页基址 `0x80206000`、偏移 `0x18`，最终为 `0x80206018`。这样就把 Guest 中执行的 `sb` 和 QEMU 计算出的物理地址对应了起来：
+
+```text
+Store 数据 VA：0xffffffffc0206018
+物理页基址：  0x80206000
+页内偏移：    0x18
+最终 PA：     0x80206018
+```
+
+![数据 Store 从虚拟地址到物理地址的计算结果](images/5.png)
+
+#### QEMU 软件 TLB 的查找
+
+RISC-V 的地址转换通常先查 TLB，只有缓存不能提供有效映射时才需要遍历页表。QEMU 4.1.1 的对应实现位于 `accel/tcg/cputlb.c`。为观察这一过程，在普通 GDB 中对 `get_page_addr_code()` 设置断点，跟踪虚拟地址 `0xffffffffc02000d8` 的取指。
+
+`get_page_addr_code()` 先通过 `tlb_index()` 定位软件 TLB 中的缓存位置，使用 `tlb_entry()` 取得条目，再执行 `tlb_hit(entry->addr_code, addr)` 检查当前条目是否对应需要取指的虚拟页。若主 TLB 未命中，代码先尝试 Victim TLB；仍未命中才调用 `tlb_fill()`。
+
+```c
+if (unlikely(!tlb_hit(entry->addr_code, addr))) {
+    if (!VICTIM_TLB_HIT(addr_code, addr)) {
+        tlb_fill(env_cpu(env), addr, 0, MMU_INST_FETCH, mmu_idx, 0);
+        index = tlb_index(env, mmu_idx, addr);
+        entry = tlb_entry(env, mmu_idx, addr);
+    }
+    assert(tlb_hit(entry->addr_code, addr));
+}
+```
+
+![get_page_addr_code 中的主 TLB、Victim TLB 查询和 Miss 分支](images/c1.png)
+
+实际调试时，`get_page_addr_code()` 在第 1032 行进入 `tlb_fill()`，说明本次取指没有可用的主 TLB 或 Victim TLB 条目。调用栈中依次出现 `get_page_addr_code → tlb_fill → riscv_cpu_tlb_fill`，本次访问地址仍为 `0xffffffffc02000d8`，访问类型为 `MMU_INST_FETCH`，`mmu_idx=1`。
+
+![取指 TLB Miss 后进入 tlb_fill 的调用栈](images/c2.png)
+
+![从通用 tlb_fill 进入 RISC-V 专用处理函数](images/c4.png)
+
+接下来，`riscv_cpu_tlb_fill()` 调用 `get_physical_address()` 按 Sv39 查询页表。该函数实际返回成功状态 `0`，得到物理页基址 `0x80200000`，权限 `prot=0x7`。在成功分支中，`tlb_set_page()` 收到虚拟页 `0xffffffffc0200000`、物理页 `0x80200000`、`mmu_idx=1` 和填充大小 `4096` 字节。虽然 Guest 的 PTE 是 1 GiB 大页映射，QEMU 仍可为当前访问对应的 4 KiB 子区域建立软件 TLB 条目。
+
+![页表翻译返回值、物理页基址和权限](images/7.png)
+
+![tlb_set_page 的参数与完整填充调用栈](images/8.png)
+
+最后返回 `get_page_addr_code()`，程序运行到 `assert(tlb_hit(entry->addr_code, addr))`。此时打印出 `entry->addr_code=0xffffffffc0200000`，与本次取指所在的虚拟页一致；`next` 又正常执行到下一条检查语句，说明填充后的条目已经可用。
+
+![软件 TLB 填充后通过 tlb_hit 检查](images/9.png)
+
+由此可以把取指过程连起来：先查询 QEMU 软件 TLB；Miss 后进入 `tlb_fill()` 和 RISC-V 的 Sv39 页表查询；成功后通过 `tlb_set_page()` 保存映射，再次检查发现 TLB 已可命中。数据 Store 则走 `store_helper()` 中相应的写入检查和填充路径。软件 TLB 已缓存同一虚拟页时，后续访问便不需要反复执行 `get_physical_address()`。
+
+#### QEMU 软件 TLB 与真实 CPU 硬件 TLB 的区别
+
+为了比较两者的区别，分别调试了开启分页前后的访存过程。
+
+首先观察 `entry.S` 中设置 `satp` 之前的 `sd a0,0(t0)` 指令。此时还没有开启 Sv39 分页，QEMU 在处理地址转换时不需要查询页表，而是直接将访问地址作为 Guest 物理地址。但在软件 TLB 中没有对应缓存时，QEMU 仍可能调用 `tlb_fill()` 建立映射。
+
+随后观察开启 Sv39 后的访存。此时 QEMU 同样会先查软件 TLB，未命中时才调用 `get_physical_address()`，根据 `satp` 找到根页表，逐级读取 PTE，计算出物理地址，再通过 `tlb_set_page()` 缓存转换结果。
+
+对比发现，真实 CPU 的硬件 TLB 主要用于缓存虚拟页到物理页的映射，减少页表查询；在 Bare 模式下，CPU 不需要进行这种页表转换。而 QEMU 的软件 TLB 除了缓存 Guest 的地址映射和访问权限，还要帮助模拟器快速找到对应的宿主内存。因此，即使 Guest 没有开启分页，QEMU 仍可能使用软件 TLB。
+
+也就是说，真实 CPU 的 TLB 主要是为了加速地址翻译，而 QEMU 的软件 TLB 还要加速整个模拟访存过程。这也是为什么 Bare 模式下仍然可能观察到 QEMU 的 TLB 填充操作。
+
+#### 调试现象与收获
+
+调试过程中遇到了几个比较有意思的现象。
+
+首先，在单步执行 `memset()` 中的 `sb` 指令时，发现每次写入的地址都增加 1，但 QEMU 并没有每次都进入 `get_physical_address()`。结合 TLB 查询代码才明白，这些地址都在同一个虚拟页内，第一次完成地址转换后，后续访问可以直接使用软件 TLB 中已有的映射，不需要反复查页表。
+
+另外，有一次明明在 `get_physical_address()` 处命中了断点，查看调用栈后却发现，它并不是由 CPU 访存触发的，而是 GDB 删除断点时，QEMU 为了更新相关信息而主动进行的地址查询。这也让我意识到，同一个函数可能在不同情况下被调用，不能只看到断点命中就认为找到了想要的执行路径，还要结合调用栈判断。
+
+调试时还遇到过部分变量显示 `<optimized out>` 的情况，因此有时需要通过函数返回值和后续执行的代码来判断结果。这次实验也让我对 QEMU 如何用软件模拟 CPU 的地址翻译和 TLB 缓存机制有了更具体的认识。
+
+#### 大模型辅助调试记录
+
+这次实验主要使用大模型辅助理解 QEMU 源码，以及解决 GDB 调试过程中遇到的问题。
+
+一开始对两个 GDB 的分工不太清楚，后来通过向大模型询问，弄明白了普通 GDB 用来调试 QEMU 本身，而 RISC-V GDB 用来控制模拟器中的内核。之后在调试 `get_page_addr_code()` 时，我尝试打印 `access_type` 和 `physical`，却一直提示变量不存在。将报错和调用栈发给模型分析后，才发现自己把 TLB 查询函数和页表翻译函数中的变量混在了一起。
+
+后面还有一次，虽然成功进入了 `get_physical_address()`，但调用栈与预期不符。模型提醒我检查上层调用关系，最后发现这次调用是由 GDB 删除断点引起的，并不是真正的 TLB Miss。于是重新设置断点，先确认进入 `riscv_cpu_tlb_fill()`，再跟踪 `get_physical_address()`、`tlb_set_page()` 和 `tlb_hit()`，最终观察到了完整的 TLB 查询与填充过程。
+
+整个过程中，大模型主要帮助我分析报错、理解代码和确定下一步该怎么调试，实际的函数调用关系、地址转换结果和 TLB 命中情况都是通过 GDB 逐步验证的。
 
 ## 五、测试与验证
 
