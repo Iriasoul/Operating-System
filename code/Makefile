@@ -1,89 +1,9 @@
-PROJ	:= lab2
+PROJ	:= lab3
 EMPTY	:=
 SPACE	:= $(EMPTY) $(EMPTY)
 SLASH	:= /
 
 V       := @
-
-# physical page manager configuration: PMM=best_fit (default) or PMM=buddy.
-# PMM=buddy BUDDY_TEST=1 additionally builds kern/mm/buddy_test.c with
-# -D UCORE_BUDDY_TEST and runs the dedicated buddy behavior tests at boot;
-# enabling BUDDY_TEST without PMM=buddy is rejected. PMM=buddy SLUB=1
-# additionally builds kern/mm/slub.c with -D UCORE_SLUB and initializes the
-# SLUB object allocator at boot; SLUB without PMM=buddy is rejected, and
-# BUDDY_TEST together with SLUB is rejected. PMM=buddy SLUB=1 SLUB_TEST=1
-# additionally builds kern/mm/slub_test.c with -D UCORE_SLUB_TEST and runs
-# the dedicated SLUB behavior tests at boot right after slub_init();
-# SLUB_TEST without PMM=buddy or without SLUB=1 is rejected, and BUDDY_TEST
-# together with SLUB_TEST is rejected. The effective configuration is
-# named PMMCFG: compile-time defines come from DEFS, object files live in
-# obj/$(PMMCFG), and bin/.pmm_config records $(PMMCFG), so switching between
-# best_fit, buddy, buddy_test, buddy_slub and buddy_slub_test never reuses
-# the other configuration's object files or images and no manual make clean
-# is needed.
-PMM ?= best_fit
-BUDDY_TEST ?= 0
-SLUB ?= 0
-SLUB_TEST ?= 0
-ifneq ($(BUDDY_TEST),0)
-ifneq ($(BUDDY_TEST),1)
-$(error unsupported BUDDY_TEST "$(BUDDY_TEST)": use 0 or 1)
-endif
-endif
-ifneq ($(SLUB),0)
-ifneq ($(SLUB),1)
-$(error unsupported SLUB "$(SLUB)": use 0 or 1)
-endif
-endif
-ifneq ($(SLUB_TEST),0)
-ifneq ($(SLUB_TEST),1)
-$(error unsupported SLUB_TEST "$(SLUB_TEST)": use 0 or 1)
-endif
-endif
-
-ifeq ($(PMM),best_fit)
-PMMCFG := best_fit
-ifneq ($(BUDDY_TEST),0)
-$(error BUDDY_TEST=$(BUDDY_TEST) requires PMM=buddy)
-endif
-ifneq ($(SLUB),0)
-$(error SLUB=$(SLUB) requires PMM=buddy)
-endif
-ifneq ($(SLUB_TEST),0)
-$(error SLUB_TEST=$(SLUB_TEST) requires PMM=buddy)
-endif
-else
-ifeq ($(PMM),buddy)
-PMMCFG := buddy
-DEFS += -D UCORE_PMM_BUDDY
-ifneq ($(BUDDY_TEST),0)
-ifneq ($(SLUB),0)
-$(error BUDDY_TEST=$(BUDDY_TEST) and SLUB=$(SLUB) are mutually exclusive)
-endif
-ifneq ($(SLUB_TEST),0)
-$(error BUDDY_TEST=$(BUDDY_TEST) and SLUB_TEST=$(SLUB_TEST) are mutually exclusive)
-endif
-PMMCFG := buddy_test
-DEFS += -D UCORE_BUDDY_TEST
-else
-ifeq ($(SLUB),1)
-PMMCFG := buddy_slub
-DEFS += -D UCORE_SLUB
-ifneq ($(SLUB_TEST),0)
-PMMCFG := buddy_slub_test
-DEFS += -D UCORE_SLUB_TEST
-endif
-else
-ifneq ($(SLUB_TEST),0)
-$(error SLUB_TEST=$(SLUB_TEST) requires SLUB=1)
-endif
-PMMCFG := buddy
-endif
-endif
-else
-$(error unsupported PMM "$(PMM)": use best_fit or buddy)
-endif
-endif
 
 #ifndef GCCPREFIX
 GCCPREFIX := riscv64-unknown-elf-
@@ -133,18 +53,8 @@ SH		:= sh
 TR		:= tr
 TOUCH	:= touch -c
 
-OBJDIR	:= obj/$(PMMCFG)
+OBJDIR	:= obj
 BINDIR	:= bin
-
-# bin/.pmm_config remembers which configuration the linked images came from.
-# Objects live in per-config objdirs, so after a config switch without make
-# clean the shared bin/kernel would look newer than the other config's
-# objects and never relink; force it instead. The identity includes the
-# test switches (best_fit, buddy, buddy_test, buddy_slub, buddy_slub_test).
-RELINK_PMM := $(shell cat $(BINDIR)/.pmm_config 2>/dev/null)
-ifneq ($(RELINK_PMM),$(PMMCFG))
-KERNEL_FORCE := FORCE
-endif
 
 ALLOBJS	:=
 ALLDEPS	:=
@@ -188,6 +98,7 @@ $(call add_files_cc,$(call listf_cc,$(LIBDIR)),libs,)
 
 KINCLUDE	+= kern/debug/ \
 			   kern/driver/ \
+			   kern/trap/ \
 			   kern/mm/ \
 			   kern/arch/
 
@@ -195,6 +106,7 @@ KSRCDIR		+= kern/init \
 			   kern/libs \
 			   kern/debug \
 			   kern/driver \
+			   kern/trap \
 			   kern/mm
 
 KCFLAGS		+= $(addprefix -I,$(KINCLUDE))
@@ -211,10 +123,9 @@ kernel = $(call totarget,kernel)
 
 $(kernel): tools/kernel.ld
 
-$(kernel): $(KOBJS) $(KERNEL_FORCE)
+$(kernel): $(KOBJS)
 	@echo + ld $@
 	$(V)$(LD) $(LDFLAGS) -T tools/kernel.ld -o $@ $(KOBJS)
-	@echo $(PMMCFG) > $(BINDIR)/.pmm_config
 	@$(OBJDUMP) -S $@ > $(call asmfile,kernel)
 	@$(OBJDUMP) -t $@ | $(SED) '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $(call symfile,kernel)
 
@@ -250,23 +161,20 @@ endif
 TARGETS: $(TARGETS)
 
 .DEFAULT_GOAL := TARGETS
-# -kernel instead of -device loader: with this QEMU's default OpenSBI
-# (fw_dynamic) the loader device leaves Domain0 Next Address = 0, so the
-# firmware jumps to 0 and no kernel output ever appears
 .PHONY: qemu spike test
 qemu: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG)
+		-device loader,file=$(UCOREIMG),addr=0x80200000
 
 debug: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(QEMU) \
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG) \
+		-device loader,file=$(UCOREIMG),addr=0x80200000\
 		-s -S
 
 gdb:
@@ -280,7 +188,7 @@ test: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 		-machine virt \
 		-nographic \
 		-bios default \
-		-kernel $(UCOREIMG)
+		-device loader,file=$(UCOREIMG),addr=0x80200000
 spike: $(UCOREIMG) $(SWAPIMG) $(SFSIMG)
 	$(V)$(SPIKE) $(UCOREIMG)
 
@@ -290,11 +198,11 @@ GRADE_GDB_IN	:= .gdb.in
 GRADE_QEMU_OUT	:= .qemu.out
 HANDIN			:= proj$(PROJ)-handin.tar.gz
 
-TOUCH_FILES		:=
+TOUCH_FILES		:= kern/trap/trap.c
 
 MAKEOPTS		:= --quiet --no-print-directory
 
-GRADE_TMP	:= /tmp/lab2_grade
+GRADE_TMP	:= /tmp/lab3_grade
 
 grade:
 	$(V)$(MAKE) $(MAKEOPTS) clean
@@ -310,9 +218,6 @@ touch:
 
 print-%:
 	@echo $($(shell echo $(patsubst print-%,%,$@) | $(TR) [a-z] [A-Z]))
-
-FORCE:
-.PHONY: FORCE
 
 .PHONY: clean dist-clean handin packall tags
 clean:
