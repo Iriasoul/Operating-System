@@ -19,23 +19,6 @@ Runtime SBI Version    : 0.1
 
 PMP0: 0x0000000080000000-0x000000008001ffff (A)
 PMP1: 0x0000000000000000-0xffffffffffffffff (A,R,W,X)
-DTB Init
-HartID: 0
-DTB Address: 0x82200000
-Physical Memory from DTB:
-  Base: 0x0000000080000000
-  Size: 0x0000000008000000 (128 MB)
-  End:  0x0000000087ffffff
-DTB init completed
-(THU.CST) os is loading ...
-Special kernel symbols:
-  entry  0xffffffffc02000d6 (virtual)
-  etext  0xffffffffc0201da8 (virtual)
-  edata  0xffffffffc0206018 (virtual)
-  end    0xffffffffc0206308 (virtual)
-Kernel executable memory footprint: 25KB
-memory management: best_fit_pmm_manager
-[Best-Fit Tail Test] init_memmap tail insertion
-kernel panic at kern/mm/best_fit_tail_test.c:43:
-    assertion failed: x != y
-qemu-system-riscv64: terminating on signal 15 from pid 656 (python3)
+MODULE1 PASS: 16-bit breakpoint, all GPRs, sp, CSR, return
+MODULE1 PASS: 32-bit breakpoint, all GPRs, sp, CSR, return
+MODULE1 ALL PASS

@@ -4,7 +4,7 @@
 #include <best_fit_pmm.h>
 #include <stdio.h>
 
-//lab2 请补充你在lab2中的代码
+// TODO: provide the Best-Fit manager implementation.
 
 static void
 basic_check(void) {
@@ -57,7 +57,7 @@ basic_check(void) {
     free_page(p2);
 }
 
-// LAB2: below code is used to check the best fit allocation algorithm (your EXERCISE 1) 
+// Check the Best-Fit allocation algorithm.
 // NOTICE: You SHOULD NOT CHANGE basic_check, default_check functions!
 static void
 best_fit_check(void) {

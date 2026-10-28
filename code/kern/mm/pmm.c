@@ -81,7 +81,7 @@ size_t nr_free_pages(void) {
     return ret;
 }
 
-//lab2 请补充你在lab2中的代码
+// TODO: provide the physical memory initialization required by the kernel.
 
 /* pmm_init - initialize the physical memory management */
 void pmm_init(void) {
