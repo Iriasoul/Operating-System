@@ -170,7 +170,7 @@ Requirements：
 ~~~~
 
 
-## 提示词 2：
+## 提示词 2：内存管理基础恢复
 
 ~~~~markdown
 [PROMPT]
@@ -395,7 +395,7 @@ Requirements：
 ~~~~
 
 
-## 提示词 3：
+## 提示词 3：中断与异常处理
 
 ~~~~markdown
 [PROMPT]
@@ -620,7 +620,7 @@ Requirements：
 ~~~~
 
 
-## 提示词 4：
+## 提示词 4：启动映射与基本验证
 
 ~~~~markdown
 [PROMPT]
@@ -843,7 +843,7 @@ Requirements：
 ~~~~
 
 
-## 提示词 5：
+## 提示词 5：专项检查与编号输出修复
 
 ~~~~markdown
 [PROMPT]
