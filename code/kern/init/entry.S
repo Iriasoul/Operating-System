@@ -61,10 +61,15 @@ bootstacktop:
     .global boot_page_table_sv39
 # 分配 4KiB 内存给预设的三级页表
 boot_page_table_sv39:
-    # 0xffffffff_c0000000 map to 0x80000000 (1G)
-    # 前 511 个页表项均设置为 0 ，因此 V=0 ，意味着是空的(unmapped)
-    .zero 8 * 511
-    # 设置最后一个页表项，PPN=0x80000，标志位 VRWXAD 均为 1
+    # 根表共 512 项，恰好占满一个 4 KiB 页。
+    # 索引 2：恒等映射低地址 DRAM 窗口 [0x80000000, 0xc0000000)。
+    # csrw satp 之后 PC 仍在 0x802000xx，缺了这一项下一次取指就会缺页，
+    # 直到 jr 跳入高地址 kern_init。
+    .zero 8 * 2
+    .quad (0x80000 << 10) | 0xcf # VRWXAD
+    .zero 8 * 508
+    # 索引 511：把高地址窗口 [0xffffffffc0000000, 2^64) 映射到同一段
+    # 物理内存，供内核在虚拟地址空间继续执行。
     .quad (0x80000 << 10) | 0xcf # VRWXAD
 
     .global boot_hartid

@@ -1,0 +1,4 @@
+root table: 512 entries, 4096 bytes, image offset 0x6000
+entry[2]   = 0x00000000200000cf
+entry[511] = 0x00000000200000cf
+boot page table check: PASS

@@ -1,0 +1,10 @@
+case: unsupported addr
+qemu adapter: unsupported loader form: loader,file=bin/ucore.img,addr=0x80000000
+qemu adapter: only loader,file=<path>,addr=0x80200000 is supported
+exit=2
+case: missing addr
+qemu adapter: unsupported -device argument: loader,file=bin/ucore.img
+exit=2
+case: no loader
+qemu adapter: expected one -device loader,file=<path>,addr=0x80200000 argument
+exit=2

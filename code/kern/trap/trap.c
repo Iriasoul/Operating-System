@@ -6,6 +6,7 @@
 #include <memlayout.h>
 #include <mmu.h>
 #include <riscv.h>
+#include <sbi.h>
 #include <stdio.h>
 #include <trap.h>
 
@@ -81,6 +82,117 @@ void print_regs(struct pushregs *gpr) {
 }
 
 //lab3 function2 YOUR CODE
+
+// Number of periodic TICK_NUM reports before the kernel shuts itself down.
+// This is the project's temporary policy, not a course requirement.
+#define SHUTDOWN_AFTER 10
+
+// Reports printed so far, kept separate from ticks so the output cadence and
+// the shutdown policy do not depend on each other.
+static size_t tick_reports = 0;
+
+// Drop the interrupt flag of scause. Official tests also call
+// interrupt_handler() directly with a bare reason number.
+static inline uintptr_t interrupt_reason(uintptr_t cause) {
+    return cause & ~((uintptr_t)1 << (sizeof(uintptr_t) * 8 - 1));
+}
+
+// Length of the instruction at a kernel virtual address, taken from its
+// encoding: 2 or 4 bytes, or 0 for the 48-bit and longer encodings this lab
+// does not decode. Only the low 16 bits are read, so no unaligned 4-byte
+// access is made.
+static size_t instruction_length(uintptr_t epc) {
+    uint16_t low = *(volatile uint16_t *)epc;
+    if ((low & 0x3) != 0x3) {
+        return 2;
+    }
+    if ((low & 0x1c) == 0x1c) {
+        return 0;
+    }
+    return 4;
+}
+
+// Advance the saved return address by the trapped instruction's real length.
+// For encodings we cannot size, dump the frame and leave epc untouched.
+static void advance_epc(struct trapframe *tf, size_t len) {
+    if (len == 2 || len == 4) {
+        tf->epc += len;
+    } else {
+        print_trapframe(tf);
+    }
+}
+
+void interrupt_handler(struct trapframe *tf) {
+    uintptr_t cause = interrupt_reason(tf->cause);
+
+    switch (cause) {
+    case IRQ_U_SOFT:
+        cprintf("User software interrupt\n");
+        break;
+    case IRQ_S_SOFT:
+        cprintf("Supervisor software interrupt\n");
+        break;
+    case IRQ_H_SOFT:
+        cprintf("Hypervisor software interrupt\n");
+        break;
+    case IRQ_M_SOFT:
+        cprintf("Machine software interrupt\n");
+        break;
+    case IRQ_U_TIMER:
+        cprintf("User timer interrupt\n");
+        break;
+    case IRQ_S_TIMER:
+        // the next event must be armed on every tick, not only at boot
+        clock_set_next_event();
+        ticks ++;
+        if (ticks % TICK_NUM == 0) {
+            print_ticks();
+            tick_reports ++;
+            if (tick_reports >= SHUTDOWN_AFTER) {
+                sbi_shutdown();
+            }
+        }
+        break;
+    case IRQ_H_TIMER:
+        cprintf("Hypervisor timer interrupt\n");
+        break;
+    case IRQ_M_TIMER:
+        cprintf("Machine timer interrupt\n");
+        break;
+    case IRQ_U_EXT:
+        cprintf("User external interrupt\n");
+        break;
+    case IRQ_S_EXT:
+        cprintf("Supervisor external interrupt\n");
+        break;
+    case IRQ_H_EXT:
+        cprintf("Hypervisor external interrupt\n");
+        break;
+    case IRQ_M_EXT:
+        cprintf("Machine external interrupt\n");
+        break;
+    default:
+        cprintf("Unknown interrupt: cause %d\n", (int)cause);
+        print_trapframe(tf);
+        break;
+    }
+}
+
+void exception_handler(struct trapframe *tf) {
+    switch (tf->cause) {
+    case CAUSE_ILLEGAL_INSTRUCTION:
+        cprintf("Illegal instruction at 0x%016lx\n", tf->epc);
+        advance_epc(tf, instruction_length(tf->epc));
+        break;
+    case CAUSE_BREAKPOINT:
+        cprintf("Breakpoint at 0x%016lx\n", tf->epc);
+        advance_epc(tf, instruction_length(tf->epc));
+        break;
+    default:
+        print_trapframe(tf);
+        break;
+    }
+}
 
 
 static inline void trap_dispatch(struct trapframe *tf) {
