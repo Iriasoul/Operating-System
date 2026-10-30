@@ -1,0 +1,16 @@
+timestamp: 2026-10-30T15:19:08+08:00
+git_head: 3a4b0f2
+git_status:
+ M code/kern/trap/trap.c
+?? report/validation/trap/
+toolchain: riscv64-unknown-elf-gcc (SiFive GCC-Metal 10.2.0-2020.12.8) 10.2.0
+qemu: QEMU emulator version 7.0.0
+direct_qemu_exit: 0
+clock_qemu_exit: 0
+direct_ok_cases: 21
+clock_markers: 10
+sha256:
+976a91fb49158cb8856d127aa9f06fbdabc63450c14c652e6d6d594554368503  /mnt/e/新建文件夹/大三上/操作系统/工作区/课程仓库/Operating-System/code/kern/trap/trap.c
+afd6309b38888d9500ee3d723f7d0db7c69f24e5a5280430ba4bc0ccd10d15f6  /mnt/e/新建文件夹/大三上/操作系统/工作区/课程仓库/Operating-System/code/kern/init/entry.S
+b40dc77807e0706bd3ae351a8c494613229ce1f71cc573037bde88887866a668  /tmp/lab3-trap-unit.7LneKa/test_direct.elf
+3c48b2a87077fcb2dc00023ca65bba90f1c051b6d728a91d9a458faa99105b04  /tmp/lab3-trap-unit.7LneKa/test_clock.elf

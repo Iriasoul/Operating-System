@@ -1,0 +1,17 @@
+timestamp: 2026-10-30T15:20:43+08:00
+git_head: 3a4b0f2
+git_status:
+ M code/kern/trap/trap.c
+?? report/validation/trap/
+toolchain: riscv64-unknown-elf-gcc (SiFive GCC-Metal 10.2.0-2020.12.8) 10.2.0
+qemu_real: /opt/qemu/bin/qemu-system-riscv64
+QEMU emulator version 7.0.0
+adapter: /mnt/e/新建文件夹/大三上/操作系统/工作区/课程仓库/Operating-System/report/validation/boot/qemu-adapter/qemu-system-riscv64
+adapter_rule: -device loader,file=<path>,addr=0x80200000 -> -kernel <path>
+normal_qemu_exit: 0
+normal_ticks: 10
+make_grade_exit: 0
+direct_grade_exit: 0
+sha256:
+976a91fb49158cb8856d127aa9f06fbdabc63450c14c652e6d6d594554368503  /mnt/e/新建文件夹/大三上/操作系统/工作区/课程仓库/Operating-System/code/kern/trap/trap.c
+afd6309b38888d9500ee3d723f7d0db7c69f24e5a5280430ba4bc0ccd10d15f6  /mnt/e/新建文件夹/大三上/操作系统/工作区/课程仓库/Operating-System/code/kern/init/entry.S

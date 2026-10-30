@@ -1,0 +1,7 @@
+16-bit breakpoint  addr=0x802004ce bytes=9002     next=0x802004d0 delta=2 addr_mod4=2
+32-bit breakpoint  addr=0x80200562 bytes=00100073 next=0x80200566 delta=4 addr_mod4=2
+16-bit illegal     addr=0x802005f2 bytes=0000     next=0x802005f4 delta=2 addr_mod4=2
+32-bit illegal     addr=0x80200686 bytes=0000007b next=0x8020068a delta=4 addr_mod4=2
+log breakpoints: 0x802004ce, 0x80200562
+log illegal:     0x802005f2, 0x80200686
+real encoding check: PASS

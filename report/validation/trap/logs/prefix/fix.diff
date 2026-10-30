@@ -1,0 +1,13 @@
+diff --git a/code/kern/trap/trap.c b/code/kern/trap/trap.c
+index 8451d6c..ac2995e 100644
+--- a/code/kern/trap/trap.c
++++ b/code/kern/trap/trap.c
+@@ -172,7 +172,7 @@ void interrupt_handler(struct trapframe *tf) {
+         cprintf("Machine external interrupt\n");
+         break;
+     default:
+-        cprintf("Unknown interrupt: cause %d\n", (int)cause);
++        cprintf("Unknown interrupt: cause %lu\n", (unsigned long)cause);
+         print_trapframe(tf);
+         break;
+     }

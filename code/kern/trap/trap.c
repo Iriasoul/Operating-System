@@ -172,7 +172,7 @@ void interrupt_handler(struct trapframe *tf) {
         cprintf("Machine external interrupt\n");
         break;
     default:
-        cprintf("Unknown interrupt: cause %d\n", (int)cause);
+        cprintf("Unknown interrupt: cause %lu\n", (unsigned long)cause);
         print_trapframe(tf);
         break;
     }

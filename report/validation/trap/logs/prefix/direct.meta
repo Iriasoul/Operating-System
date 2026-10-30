@@ -1,0 +1,8 @@
+timestamp: 2026-10-30T15:16:33+08:00
+git_head: 3a4b0f2
+pre_fix_trap_c_sha256: 1c16ed56217ec4168d9d0e3a515a9e9782e15cc3b8f2b6fa411743c1a8e6dd7a
+pre_fix_source: git show HEAD:code/kern/trap/trap.c (HEAD 3a4b0f2)
+entry_s_sha256: afd6309b38888d9500ee3d723f7d0db7c69f24e5a5280430ba4bc0ccd10d15f6
+command: qemu-system-riscv64 -machine virt -nographic -bios default -kernel test_direct.bin -serial file:logs/prefix/direct.log -monitor none -no-reboot
+qemu_exit_status: 0 (QEMU returned 0 even on failing tests; verdict comes from markers)
+result: DIRECT TESTS FAIL (2); both big-cause cases printed Unknown interrupt: cause 15
