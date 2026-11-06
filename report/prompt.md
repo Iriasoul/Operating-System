@@ -1,4 +1,4 @@
-# Lab3 提示词——石晨昊负责部分
+# 小组实验提示词记录
 
 本文件采用课程模板的 [PROMPT]、[RELY]、[GUARANTEE]、[SPECIFICATION] 四部分结构，以下是每轮使用的提示词：
 

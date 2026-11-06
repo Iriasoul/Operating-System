@@ -81,7 +81,7 @@ void print_regs(struct pushregs *gpr) {
     cprintf("  t6       0x%08x\n", gpr->t6);
 }
 
-//lab3 function2 YOUR CODE
+//lab3 function2 2410966 2410668
 
 // Number of periodic TICK_NUM reports before the kernel shuts itself down.
 // This is the project's temporary policy, not a course requirement.
@@ -122,6 +122,7 @@ static void advance_epc(struct trapframe *tf, size_t len) {
     }
 }
 
+// 2410966 王策：中断分类与持续时钟。
 void interrupt_handler(struct trapframe *tf) {
     uintptr_t cause = interrupt_reason(tf->cause);
 
@@ -178,6 +179,7 @@ void interrupt_handler(struct trapframe *tf) {
     }
 }
 
+// 2410668 吕昊远：异常处理与 EPC 更新。
 void exception_handler(struct trapframe *tf) {
     switch (tf->cause) {
     case CAUSE_ILLEGAL_INSTRUCTION:
