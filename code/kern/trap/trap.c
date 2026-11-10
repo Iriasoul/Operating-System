@@ -6,13 +6,14 @@
 #include <memlayout.h>
 #include <mmu.h>
 #include <riscv.h>
-#include <sbi.h>
 #include <stdio.h>
 #include <trap.h>
+#include <vmm.h>
 
 #define TICK_NUM 100
 
-static void print_ticks() {
+static void print_ticks()
+{
     cprintf("%d ticks\n", TICK_NUM);
 #ifdef DEBUG_GRADE
     cprintf("End of Test.\n");
@@ -22,22 +23,20 @@ static void print_ticks() {
 
 /* idt_init - initialize IDT to each of the entry points in kern/trap/vectors.S
  */
-void idt_init(void) {
-
+void idt_init(void)
+{
     extern void __alltraps(void);
-    /* Set sup0 scratch register to 0, indicating to exception vector
-       that we are presently executing in the kernel */
+    /* Set sscratch register to 0, indicating to exception vector that we are
+     * presently executing in the kernel */
     write_csr(sscratch, 0);
     /* Set the exception vector address */
     write_csr(stvec, &__alltraps);
+    /* Allow kernel to access user memory */
+    set_csr(sstatus, SSTATUS_SUM);
 }
 
-/* trap_in_kernel - test if trap happened in kernel */
-bool trap_in_kernel(struct trapframe *tf) {
-    return (tf->status & SSTATUS_SPP) != 0;
-}
-
-void print_trapframe(struct trapframe *tf) {
+void print_trapframe(struct trapframe *tf)
+{
     cprintf("trapframe at %p\n", tf);
     print_regs(&tf->gpr);
     cprintf("  status   0x%08x\n", tf->status);
@@ -46,7 +45,8 @@ void print_trapframe(struct trapframe *tf) {
     cprintf("  cause    0x%08x\n", tf->cause);
 }
 
-void print_regs(struct pushregs *gpr) {
+void print_regs(struct pushregs *gpr)
+{
     cprintf("  zero     0x%08x\n", gpr->zero);
     cprintf("  ra       0x%08x\n", gpr->ra);
     cprintf("  sp       0x%08x\n", gpr->sp);
@@ -81,131 +81,11 @@ void print_regs(struct pushregs *gpr) {
     cprintf("  t6       0x%08x\n", gpr->t6);
 }
 
-//lab3 function2 2410966 2410668
+extern struct mm_struct *check_mm_struct;
 
-// Number of periodic TICK_NUM reports before the kernel shuts itself down.
-// This is the project's temporary policy, not a course requirement.
-#define SHUTDOWN_AFTER 10
-
-// Reports printed so far, kept separate from ticks so the output cadence and
-// the shutdown policy do not depend on each other.
-static size_t tick_reports = 0;
-
-// Drop the interrupt flag of scause. Official tests also call
-// interrupt_handler() directly with a bare reason number.
-static inline uintptr_t interrupt_reason(uintptr_t cause) {
-    return cause & ~((uintptr_t)1 << (sizeof(uintptr_t) * 8 - 1));
-}
-
-// Length of the instruction at a kernel virtual address, taken from its
-// encoding: 2 or 4 bytes, or 0 for the 48-bit and longer encodings this lab
-// does not decode. Only the low 16 bits are read, so no unaligned 4-byte
-// access is made.
-static size_t instruction_length(uintptr_t epc) {
-    uint16_t low = *(volatile uint16_t *)epc;
-    if ((low & 0x3) != 0x3) {
-        return 2;
-    }
-    if ((low & 0x1c) == 0x1c) {
-        return 0;
-    }
-    return 4;
-}
-
-// Advance the saved return address by the trapped instruction's real length.
-// For encodings we cannot size, dump the frame and leave epc untouched.
-static void advance_epc(struct trapframe *tf, size_t len) {
-    if (len == 2 || len == 4) {
-        tf->epc += len;
-    } else {
-        print_trapframe(tf);
-    }
-}
-
-// 2410966 王策：中断分类与持续时钟。
-void interrupt_handler(struct trapframe *tf) {
-    uintptr_t cause = interrupt_reason(tf->cause);
-
-    switch (cause) {
-    case IRQ_U_SOFT:
-        cprintf("User software interrupt\n");
-        break;
-    case IRQ_S_SOFT:
-        cprintf("Supervisor software interrupt\n");
-        break;
-    case IRQ_H_SOFT:
-        cprintf("Hypervisor software interrupt\n");
-        break;
-    case IRQ_M_SOFT:
-        cprintf("Machine software interrupt\n");
-        break;
-    case IRQ_U_TIMER:
-        cprintf("User timer interrupt\n");
-        break;
-    case IRQ_S_TIMER:
-        // the next event must be armed on every tick, not only at boot
-        clock_set_next_event();
-        ticks ++;
-        if (ticks % TICK_NUM == 0) {
-            print_ticks();
-            tick_reports ++;
-            if (tick_reports >= SHUTDOWN_AFTER) {
-                sbi_shutdown();
-            }
-        }
-        break;
-    case IRQ_H_TIMER:
-        cprintf("Hypervisor timer interrupt\n");
-        break;
-    case IRQ_M_TIMER:
-        cprintf("Machine timer interrupt\n");
-        break;
-    case IRQ_U_EXT:
-        cprintf("User external interrupt\n");
-        break;
-    case IRQ_S_EXT:
-        cprintf("Supervisor external interrupt\n");
-        break;
-    case IRQ_H_EXT:
-        cprintf("Hypervisor external interrupt\n");
-        break;
-    case IRQ_M_EXT:
-        cprintf("Machine external interrupt\n");
-        break;
-    default:
-        cprintf("Unknown interrupt: cause %lu\n", (unsigned long)cause);
-        print_trapframe(tf);
-        break;
-    }
-}
-
-// 2410668 吕昊远：异常处理与 EPC 更新。
-void exception_handler(struct trapframe *tf) {
-    switch (tf->cause) {
-    case CAUSE_ILLEGAL_INSTRUCTION:
-        cprintf("Illegal instruction at 0x%016lx\n", tf->epc);
-        advance_epc(tf, instruction_length(tf->epc));
-        break;
-    case CAUSE_BREAKPOINT:
-        cprintf("Breakpoint at 0x%016lx\n", tf->epc);
-        advance_epc(tf, instruction_length(tf->epc));
-        break;
-    default:
-        print_trapframe(tf);
-        break;
-    }
-}
+//lab3 请补充你在lab3中的代码
 
 
-static inline void trap_dispatch(struct trapframe *tf) {
-    if ((intptr_t)tf->cause < 0) {
-        // interrupts
-        interrupt_handler(tf);
-    } else {
-        // exceptions
-        exception_handler(tf);
-    }
-}
 
 /* *
  * trap - handles or dispatches an exception/interrupt. if and when trap()
@@ -213,7 +93,17 @@ static inline void trap_dispatch(struct trapframe *tf) {
  * the code in kern/trap/trapentry.S restores the old CPU state saved in the
  * trapframe and then uses the iret instruction to return from the exception.
  * */
-void trap(struct trapframe *tf) {
+void trap(struct trapframe *tf)
+{
     // dispatch based on what type of trap occurred
-    trap_dispatch(tf);
+    if ((intptr_t)tf->cause < 0)
+    {
+        // interrupts
+        interrupt_handler(tf);
+    }
+    else
+    {
+        // exceptions
+        exception_handler(tf);
+    }
 }
