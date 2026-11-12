@@ -85,7 +85,117 @@ extern struct mm_struct *check_mm_struct;
 
 //lab3 请补充你在lab3中的代码
 
+static inline uintptr_t
+interrupt_reason(uintptr_t cause) {
+    return cause & ~((uintptr_t)1 << (sizeof(uintptr_t) * 8 - 1));
+}
 
+static size_t
+instruction_length(uintptr_t epc) {
+    uint16_t low = *(volatile uint16_t *)epc;
+
+    if ((low & 0x3) != 0x3) {
+        return 2;
+    }
+
+    if ((low & 0x1c) == 0x1c) {
+        return 0;
+    }
+
+    return 4;
+}
+
+static void
+advance_epc(struct trapframe *tf, size_t len) {
+    if (len == 2 || len == 4) {
+        tf->epc += len;
+    } else {
+        print_trapframe(tf);
+    }
+}
+
+void interrupt_handler(struct trapframe *tf) {
+    uintptr_t cause = interrupt_reason(tf->cause);
+
+    switch (cause) {
+    case IRQ_U_SOFT:
+        cprintf("User software interrupt\n");
+        break;
+
+    case IRQ_S_SOFT:
+        cprintf("Supervisor software interrupt\n");
+        break;
+
+    case IRQ_H_SOFT:
+        cprintf("Hypervisor software interrupt\n");
+        break;
+
+    case IRQ_M_SOFT:
+        cprintf("Machine software interrupt\n");
+        break;
+
+    case IRQ_U_TIMER:
+        cprintf("User timer interrupt\n");
+        break;
+
+    case IRQ_S_TIMER:
+        clock_set_next_event();
+        ticks ++;
+
+        if (ticks % TICK_NUM == 0) {
+            print_ticks();
+        }
+        break;
+
+    case IRQ_H_TIMER:
+        cprintf("Hypervisor timer interrupt\n");
+        break;
+
+    case IRQ_M_TIMER:
+        cprintf("Machine timer interrupt\n");
+        break;
+
+    case IRQ_U_EXT:
+        cprintf("User external interrupt\n");
+        break;
+
+    case IRQ_S_EXT:
+        cprintf("Supervisor external interrupt\n");
+        break;
+
+    case IRQ_H_EXT:
+        cprintf("Hypervisor external interrupt\n");
+        break;
+
+    case IRQ_M_EXT:
+        cprintf("Machine external interrupt\n");
+        break;
+
+    default:
+        cprintf("Unknown interrupt: cause %lu\n",
+                (unsigned long)cause);
+        print_trapframe(tf);
+        break;
+    }
+}
+
+void exception_handler(struct trapframe *tf) {
+    switch (tf->cause) {
+    case CAUSE_ILLEGAL_INSTRUCTION:
+        cprintf("Illegal instruction at 0x%016lx\n", tf->epc);
+        advance_epc(tf, instruction_length(tf->epc));
+        break;
+
+    case CAUSE_BREAKPOINT:
+        cprintf("Breakpoint at 0x%016lx\n", tf->epc);
+        advance_epc(tf, instruction_length(tf->epc));
+        break;
+
+    default:
+        print_trapframe(tf);
+        break;
+    }
+}
 
 /* *
  * trap - handles or dispatches an exception/interrupt. if and when trap()

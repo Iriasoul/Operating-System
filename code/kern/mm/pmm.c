@@ -88,7 +88,91 @@ size_t nr_free_pages(void)
 }
 
 //lab2 请补充你在lab2中的代码
+static void
+page_init(void) {
+    va_pa_offset = PHYSICAL_MEMORY_OFFSET;
 
+    const uint64_t mem_limit =
+        (uint64_t)KERNTOP - PHYSICAL_MEMORY_OFFSET;
+
+    uint64_t mem_base = get_memory_base();
+    uint64_t mem_size = get_memory_size();
+
+    cprintf("page_init: detected physical memory base 0x%016lx, size 0x%016lx\n",
+            mem_base, mem_size);
+
+    if (mem_base != DRAM_BASE) {
+        panic("page_init: unsupported memory base 0x%016lx", mem_base);
+    }
+
+    if (mem_size == 0) {
+        panic("page_init: zero-length physical memory");
+    }
+
+    uint64_t mem_end = mem_base + mem_size;
+
+    if (mem_end < mem_base) {
+        panic("page_init: memory range overflow");
+    }
+
+    if (mem_end > mem_limit) {
+        mem_end = mem_limit;
+    }
+
+    npage = PPN(mem_end);
+
+    if (npage <= nbase) {
+        panic("page_init: no manageable page (npage = %lu)",
+              (unsigned long)npage);
+    }
+
+    size_t nr_desc = npage - nbase;
+
+    extern char end[];
+
+    uintptr_t freemem_va =
+        ROUNDUP((uintptr_t)end, PGSIZE);
+    uintptr_t freemem_pa = PADDR(freemem_va);
+
+    uintptr_t free_start_va =
+        ROUNDUP(freemem_va + nr_desc * sizeof(struct Page), PGSIZE);
+    uintptr_t free_start_pa = PADDR(free_start_va);
+
+    size_t free_start_ppn = PPN(free_start_pa);
+
+    if (PPN(freemem_pa) >= npage) {
+        panic("page_init: kernel image out of managed memory");
+    }
+
+    if (free_start_ppn > npage) {
+        panic("page_init: no room for %lu page descriptors",
+              (unsigned long)nr_desc);
+    }
+
+    pages = (struct Page *)freemem_va;
+
+    for (size_t i = 0; i < nr_desc; i ++) {
+        struct Page *p = pages + i;
+        p->flags = p->property = 0;
+        set_page_ref(p, 0);
+        SetPageReserved(p);
+    }
+
+    size_t nfree = npage - free_start_ppn;
+
+    cprintf("page_init: manage [0x%016lx, 0x%016lx), %lu pages, descriptors at 0x%016lx\n",
+            mem_base, mem_end, (unsigned long)nr_desc, freemem_va);
+
+    if (nfree > 0) {
+        cprintf("page_init: free pages [0x%016lx, 0x%016lx), %lu pages\n",
+                free_start_pa, (uintptr_t)npage << PGSHIFT,
+                (unsigned long)nfree);
+
+        init_memmap(pa2page(free_start_pa), nfree);
+    } else {
+        cprintf("page_init: no whole free page left for the pmm manager\n");
+    }
+}
 static void enable_paging(void)
 {
     write_csr(satp, 0x8000000000000000 | (boot_pgdir_pa >> RISCV_PGSHIFT));
@@ -220,13 +304,62 @@ struct Page *get_page(pde_t *pgdir, uintptr_t la, pte_t **ptep_store)
     return NULL;
 }
 
-//LAB4 function1 YOUR CODE
+//LAB4 function1 2410966
+int page_insert(pde_t *pgdir, struct Page *page, uintptr_t la, uint32_t perm)
+{
+    pde_t *pdep1 = &pgdir[PDX1(la)];
+    pde_t old_pdep1 = *pdep1;
+    pte_t *ptep = get_pte(pgdir, la, 1);
+    if (ptep == NULL)
+    {
+        
+        if (!(old_pdep1 & PTE_V) && (*pdep1 & PTE_V))
+        {
+            struct Page *pd_page = pde2page(*pdep1);
+            *pdep1 = old_pdep1;
+            tlb_invalidate(pgdir, la);
+            set_page_ref(pd_page, 0);
+            free_page(pd_page);
+        }
+        return -E_NO_MEM;
+    }
 
+    struct Page *old_page = NULL;
+    if (*ptep & PTE_V)
+    {
+        old_page = pte2page(*ptep);
+    }
+    if (old_page != page)
+    {
+        page_ref_inc(page);
+    }
 
+    *ptep = pte_create(page2ppn(page), perm);
+    tlb_invalidate(pgdir, la);
 
+    if (old_page != NULL && old_page != page && page_ref_dec(old_page) == 0)
+    {
+        free_page(old_page);
+    }
+    return 0;
+}
 
+void page_remove(pde_t *pgdir, uintptr_t la)
+{
+    pte_t *ptep = get_pte(pgdir, la, 0);
+    if (ptep == NULL || !(*ptep & PTE_V))
+    {
+        return;
+    }
 
-
+    struct Page *page = pte2page(*ptep);
+    *ptep = 0;
+    tlb_invalidate(pgdir, la);
+    if (page_ref_dec(page) == 0)
+    {
+        free_page(page);
+    }
+}
 
 // invalidate a TLB entry, but only if the page tables being
 // edited are the ones currently in use by the processor.
