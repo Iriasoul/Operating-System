@@ -1,0 +1,58 @@
+Lab4 功能模块二验证记录
+阶段说明：本文件保留仅完成模块二时的结果。模块三完成后的最终整机评分为 30/30，见 lab4-grade.log；最新独立测试见 module2-3-isolated.log。
+负责人：2412449-石晨昊
+日期：2026-11-17
+环境：WSL CompilerLab；GNU Make 4.3
+RISC-V 编译器：riscv64-unknown-elf-gcc (g1b306039ac4) 15.1.0
+宿主机编译器：gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0
+补查完整链接：riscv64-linux-gnu-gcc (Ubuntu 11.4.0-1ubuntu1~22.04) 11.4.0
+以下为本次实际执行的命令、输出及故障摘要；命令均从 code 目录运行。
+
+1. 初次独立测试发现的错误（修复前，摘录）
+
+命令：sh tools/test_proc_create/run.sh
+ERROR: AddressSanitizer: global-buffer-overflow
+READ of size 15
+调用位置：set_proc_name，kern/process/proc.c:89
+上层调用：proc_init → set_proc_name → memcpy
+源字符串："idle"，对象大小 5 字节（包括终止符）
+根因：已有辅助函数按 PROC_NAME_LEN 固定读取 15 字节。
+修复：保留目标数组清零，将 memcpy 改为 strncpy，并增加名称边界检查。
+
+2. 修复后的交叉编译与独立测试（退出码 0）
+
+命令：make obj/kern/process/proc.o --no-print-directory
+输出：
++ cc kern/process/proc.c
+
+命令：sh tools/test_proc_create/run.sh
+输出：
+[Module2] PCB initialization and allocation failure PASS
+[Test Process Create] PASS
+[Module2] Independent trapframe and both stack modes PASS
+[Module2] PID/hash/list, thread entry and enabled IRQ restoration PASS
+[Module2] PCB/stack failures leave no resources or registration PASS
+[Module2] Process limit rejects before allocating PASS
+[Module2] PID remains unconsumed on failure and disabled IRQ preserved PASS
+[Module2] All isolated process-creation tests PASS
+
+独立测试启用 ASan、UBSan 和泄漏检测。模拟内核堆、页分配、地址转换及中断硬件，
+执行实际 proc.c、wakeup_proc、hash32 与框架的创建断言，使用宿主机字符串函数。
+没有执行 RISC-V 汇编上下文切换、PMM 测试或调度测试。
+
+3. 当前整机构建（未通过）
+
+命令：make -j2 --no-print-directory
+默认 GCC 15 构建日志的实际错误：
+kern/mm/kmalloc.c:92:29: error: passing argument 1 of 'kva2page' makes pointer from integer without a cast [-Wint-conversion]
+kern/mm/pmm.h:117:16: note: expected 'void *' but argument is of type 'long unsigned int'
+make: *** [Makefile:120: obj/kern/mm/kmalloc.o] Error 1
+
+命令：make -j2 --no-print-directory GCCPREFIX=riscv64-linux-gnu- OBJDIR=obj/module2-gcc11 BINDIR=bin/module2-gcc11
+GCC 11 对上述类型问题给出警告，随后在链接阶段失败：
+riscv64-linux-gnu-ld: obj/module2-gcc11/kern/init/init.o: in function `kern_init':
+kern/init/init.c:35: undefined reference to `cpu_idle'
+make: *** [Makefile:130: bin/module2-gcc11/kernel] Error 1
+
+模块三未实现；本次未执行 QEMU 或 make grade，未取得整机评分。
+copy_mm 在当前合法输入下总是返回 0，其返回错误时的清理分支只做了静态检查。

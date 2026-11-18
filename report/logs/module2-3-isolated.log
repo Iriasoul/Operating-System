@@ -1,0 +1,19 @@
+In file included from /mnt/c/Users/18695/Desktop/Operating-System/code/tools/test_proc_create/test.c:367:
+/mnt/c/Users/18695/Desktop/Operating-System/code/tools/test_proc_create/../test_lab4.c: In function ‘test_lab4_thread’:
+/mnt/c/Users/18695/Desktop/Operating-System/code/tools/test_proc_create/../test_lab4.c:84:1: warning: no return statement in function returning non-void [-Wreturn-type]
+   84 | }
+      | ^
+[Module2] PCB initialization and allocation failure PASS
+[Test Process Create] PASS
+[Module2] Independent trapframe and both stack modes PASS
+[Module2] PID/hash/list, thread entry and enabled IRQ restoration PASS
+[Module2] PCB/stack failures leave no resources or registration PASS
+[Module2] Process limit rejects before allocating PASS
+[Module2] PID remains unconsumed on failure and disabled IRQ preserved PASS
+[Module2] All isolated process-creation tests PASS
+[Module3] Idle selects a runnable thread and switches atomically PASS
+[Module3] Skips blocked/zombie threads and avoids self-switch PASS
+[Module3] All blocked threads fall back to idle PASS
+[Module3] Wraps around list head and preserves disabled IRQ PASS
+[Module3] Empty process list keeps idle running PASS
+[Module2/3] All isolated tests and resource cleanup PASS
