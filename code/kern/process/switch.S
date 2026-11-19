@@ -1,5 +1,7 @@
-//LAB4 function3 2410668
 #include <riscv.h>
+
+//lab4 请补充你在lab4中的代码
+//LAB4 function3 2410668
 
     .text
     .align 2

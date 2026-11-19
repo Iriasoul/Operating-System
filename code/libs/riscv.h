@@ -205,8 +205,6 @@
 
 #ifndef __ASSEMBLER__
 
-#include <defs.h>
-
 #ifdef __GNUC__
 
 #define read_csr(reg) ({ unsigned long __tmp; \
@@ -244,11 +242,9 @@
 #define barrier() __asm__ __volatile__("fence" ::: "memory")
 
 static inline void
-lsatp(uintptr_t pgdir)
+lsatp(unsigned long pgdir)
 {
-  write_csr(satp, ((uintptr_t)SATP_MODE_SV39 << 60) |
-                  (pgdir >> RISCV_PGSHIFT));
-  asm volatile("sfence.vma" ::: "memory");
+  write_csr(satp, 0x8000000000000000 | (pgdir >> RISCV_PGSHIFT));
 }
 
 #endif

@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Inject Lab4 grading tests into a temporary student-tree copy.
+"""Inject Lab5 grading tests into a temporary student-tree copy.
 
-Tests are inserted at function boundaries:
-  * pmm_init: function tail
+Tests are intentionally inserted only at function boundaries:
   * proc_init: function tail
   * init_main: function entry
 
@@ -17,7 +16,7 @@ import sys
 
 
 def die(message):
-    print("[lab4 inject] ERROR: " + message)
+    print("[lab5 inject] ERROR: " + message)
     raise SystemExit(1)
 
 
@@ -47,9 +46,9 @@ def find_function(text, name):
     pattern = re.compile(
         r"(?ms)^[ \t]*"
         r"(?:static[ \t]+)?"
-        r"[A-Za-z_][A-Za-z0-9_ \t\r\n\*]*?"
+        r"[A-Za-z_][A-Za-z0-9_ \t\n\*]*?"
         r"\b" + re.escape(name) +
-        r"[ \t\r\n]*\([^;{}]*\)[ \t\r\n]*\{"
+        r"[ \t\n]*\([^;{}]*\)[ \t\n]*\{"
     )
     matches = list(pattern.finditer(text))
     if len(matches) != 1:
@@ -142,18 +141,15 @@ def insert_at_function_end(path, name, code):
 
 makefile = os.path.join(root, "Makefile")
 make = read_text(makefile)
-if "kern/test" in make or "test_lab4.h" in make:
+if "kern/test" in make or "test_lab5.h" in make:
     die("The skeleton already contains test hooks; duplicate injection is not allowed")
 if "--wrap=" in make:
     die("Detected leftover --wrap configuration; the grading skeleton must use direct injection")
 
 testdir = os.path.join(root, "kern", "test")
 os.makedirs(testdir, exist_ok=True)
-for name in ("test_lab4.c", "test_lab4.h"):
-    src = os.path.join(tools, name)
-    if not os.path.exists(src):
-        die("tools/ not found".format(name))
-    shutil.copyfile(src, os.path.join(testdir, name))
+for name in ("test_lab5.c", "test_lab5.h"):
+    shutil.copyfile(os.path.join(tools, name), os.path.join(testdir, name))
 
 for variable in ("KINCLUDE", "KSRCDIR"):
     match = re.search(
@@ -165,12 +161,9 @@ for variable in ("KINCLUDE", "KSRCDIR"):
     make = make[:match.end()] + "\n" + variable + "\t+= kern/test" + make[match.end():]
 write_text(makefile, make)
 
-pmm = os.path.join(root, "kern", "mm", "pmm.c")
 proc = os.path.join(root, "kern", "process", "proc.c")
-insert_include(pmm, "test_lab4.h", "pmm.h")
-insert_include(proc, "test_lab4.h", "proc.h")
-insert_at_function_end(pmm, "pmm_init", "test_lab4_pmm_basic();")
-insert_at_function_end(proc, "proc_init", "test_lab4_process_create();")
-insert_at_function_start(proc, "init_main", "test_lab4_schedule();")
+insert_include(proc, "test_lab5.h", "proc.h")
+insert_at_function_end(proc, "proc_init", "test_lab5_process_create();")
+insert_at_function_start(proc, "init_main", "test_lab5_syscall();\ntest_lab5_process_control();")
 
-print("lab4 injection complete")
+print("lab5 injection complete")

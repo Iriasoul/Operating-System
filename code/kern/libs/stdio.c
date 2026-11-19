@@ -53,6 +53,22 @@ void cputchar(int c)
     cons_putc(c);
 }
 
+/* *
+ * cputs- writes the string pointed by @str to stdout and
+ * appends a newline character.
+ * */
+int cputs(const char *str)
+{
+    int cnt = 0;
+    char c;
+    while ((c = *str++) != '\0')
+    {
+        cputch(c, &cnt);
+    }
+    cputch('\n', &cnt);
+    return cnt;
+}
+
 /* getchar - reads a single non-zero character from stdin */
 int getchar(void)
 {

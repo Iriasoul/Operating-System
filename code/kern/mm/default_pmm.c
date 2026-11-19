@@ -1,10 +1,10 @@
 #include <pmm.h>
 #include <list.h>
+#include <string.h>
 #include <default_pmm.h>
-#include <stdio.h>
 
 //lab2 请补充你在lab2中的代码
-static free_area_t free_area;
+free_area_t free_area;
 
 #define free_list (free_area.free_list)
 #define nr_free (free_area.nr_free)
@@ -140,9 +140,10 @@ static size_t
 default_nr_free_pages(void) {
     return nr_free;
 }
-// Framework tests: students must not modify basic_check or best_fit_check.
+
 static void
-basic_check(void) {
+basic_check(void)
+{
     struct Page *p0, *p1, *p2;
     p0 = p1 = p2 = NULL;
     assert((p0 = alloc_page()) != NULL);
@@ -192,12 +193,15 @@ basic_check(void) {
     free_page(p2);
 }
 
+// below code is used to check the first fit allocation algorithm (your EXERCISE 1)
+// NOTICE: You SHOULD NOT CHANGE basic_check, default_check functions!
 static void
-best_fit_check(void) {
-    int score = 0, sumscore = 6;
+default_check(void)
+{
     int count = 0, total = 0;
     list_entry_t *le = &free_list;
-    while ((le = list_next(le)) != &free_list) {
+    while ((le = list_next(le)) != &free_list)
+    {
         struct Page *p = le2page(le, page_link);
         assert(PageProperty(p));
         count++, total += p->property;
@@ -206,53 +210,41 @@ best_fit_check(void) {
 
     basic_check();
 
-    #ifdef ucore_test
-    score += 1;
-    cprintf("grading: %d / %d points\n", score, sumscore);
-    #endif
     struct Page *p0 = alloc_pages(5), *p1, *p2;
     assert(p0 != NULL);
     assert(!PageProperty(p0));
 
-    #ifdef ucore_test
-    score += 1;
-    cprintf("grading: %d / %d points\n", score, sumscore);
-    #endif
     list_entry_t free_list_store = free_list;
     list_init(&free_list);
     assert(list_empty(&free_list));
     assert(alloc_page() == NULL);
 
-    #ifdef ucore_test
-    score += 1;
-    cprintf("grading: %d / %d points\n", score, sumscore);
-    #endif
     unsigned int nr_free_store = nr_free;
     nr_free = 0;
 
-    // * - - * -
-    free_pages(p0 + 1, 2);
-    free_pages(p0 + 4, 1);
+    free_pages(p0 + 2, 3);
     assert(alloc_pages(4) == NULL);
-    assert(PageProperty(p0 + 1) && p0[1].property == 2);
-    // * - - * *
-    assert((p1 = alloc_pages(1)) != NULL);
-    assert(alloc_pages(2) != NULL);
-    assert(p0 + 4 == p1);
+    assert(PageProperty(p0 + 2) && p0[2].property == 3);
+    assert((p1 = alloc_pages(3)) != NULL);
+    assert(alloc_page() == NULL);
+    assert(p0 + 2 == p1);
 
-    #ifdef ucore_test
-    score += 1;
-    cprintf("grading: %d / %d points\n", score, sumscore);
-    #endif
     p2 = p0 + 1;
-    free_pages(p0, 5);
+    free_page(p0);
+    free_pages(p1, 3);
+    assert(PageProperty(p0) && p0->property == 1);
+    assert(PageProperty(p1) && p1->property == 3);
+
+    assert((p0 = alloc_page()) == p2 - 1);
+    free_page(p0);
+    assert((p0 = alloc_pages(2)) == p2 + 1);
+
+    free_pages(p0, 2);
+    free_page(p2);
+
     assert((p0 = alloc_pages(5)) != NULL);
     assert(alloc_page() == NULL);
 
-    #ifdef ucore_test
-    score += 1;
-    cprintf("grading: %d / %d points\n", score, sumscore);
-    #endif
     assert(nr_free == 0);
     nr_free = nr_free_store;
 
@@ -260,25 +252,12 @@ best_fit_check(void) {
     free_pages(p0, 5);
 
     le = &free_list;
-    while ((le = list_next(le)) != &free_list) {
+    while ((le = list_next(le)) != &free_list)
+    {
         struct Page *p = le2page(le, page_link);
         count--, total -= p->property;
     }
     assert(count == 0);
     assert(total == 0);
-    #ifdef ucore_test
-    score += 1;
-    cprintf("grading: %d / %d points\n", score, sumscore);
-    #endif
 }
-
-const struct pmm_manager default_pmm_manager = {
-    .name = "best_fit_pmm_manager",
-    .init = default_init,
-    .init_memmap = default_init_memmap,
-    .alloc_pages = default_alloc_pages,
-    .free_pages = default_free_pages,
-    .nr_free_pages = default_nr_free_pages,
-    .check = best_fit_check,
-};
 

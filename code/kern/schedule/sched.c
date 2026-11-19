@@ -4,12 +4,26 @@
 #include <sched.h>
 #include <assert.h>
 
-void
-wakeup_proc(struct proc_struct *proc) {
-    assert(proc->state != PROC_ZOMBIE && proc->state != PROC_RUNNABLE);
-    proc->state = PROC_RUNNABLE;
+void wakeup_proc(struct proc_struct *proc)
+{
+    assert(proc->state != PROC_ZOMBIE);
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    {
+        if (proc->state != PROC_RUNNABLE)
+        {
+            proc->state = PROC_RUNNABLE;
+            proc->wait_state = 0;
+        }
+        else
+        {
+            warn("wakeup runnable process.\n");
+        }
+    }
+    local_intr_restore(intr_flag);
 }
 
+//lab4 请补充你在lab4中的代码
 //LAB4 function3 2410668
 void schedule(void)
 {

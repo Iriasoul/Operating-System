@@ -44,7 +44,7 @@ struct trapframe
     struct pushregs gpr;
     uintptr_t status;
     uintptr_t epc;
-    uintptr_t badvaddr;
+    uintptr_t tval;
     uintptr_t cause;
 };
 
@@ -52,5 +52,6 @@ void trap(struct trapframe *tf);
 void idt_init(void);
 void print_trapframe(struct trapframe *tf);
 void print_regs(struct pushregs *gpr);
+bool trap_in_kernel(struct trapframe *tf);
 
 #endif /* !__KERN_TRAP_TRAP_H__ */
