@@ -462,6 +462,16 @@ Total Score: 30/30
 
 普通 QEMU 日志末尾的 `process exit!!` panic 来自框架已有 `do_exit`：init 函数输出后返回，线程入口继续调用它，随后内核通过监视器关闭模拟器。本实验没有扩展完整的退出和回收流程。评分没有放宽或删除断言，首次评分编译失败的记录保留在 [初次评分日志](logs/lab4-grade-initial.log)。
 
+#### 运行截图
+
+**图 1　QEMU 启动与内核线程运行。** 物理页分配、页表和 VMA 自检均通过。随后 PID 为 1 的 `init` 执行 `init_main()` 并打印 `Hello world!!`，表明首次调度和线程切换成功。末尾的 `process exit!!` 出现在 `init` 完成输出并返回之后。
+
+![QEMU 启动终端，显示内存自检通过以及 init 打印 Hello world](images/lab4-qemu.png)
+
+**图 2　Lab4 自动评分。** PMM、Process Create、Schedule 三项均为 `OK`，总分为 **30/30**。
+
+![Lab4 自动评分终端，三项测试通过且总分为 30/30](images/lab4-grade.png)
+
 ## 六、实验总结与收获
 
 ### 对操作系统的理解
