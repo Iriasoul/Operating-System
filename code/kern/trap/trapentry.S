@@ -68,11 +68,17 @@ _save_context:
     .macro RESTORE_ALL
 
     #lab3：填写你在lab3中实现的代码，并进行修改补充
-    LOAD s0, 32*REGBYTES(sp)
-    LOAD s1, 33*REGBYTES(sp)
+    LOCAL _restore_context
+    LOAD s1, 32*REGBYTES(sp)
+    LOAD s2, 33*REGBYTES(sp)
 
-    csrw sstatus, s0
-    csrw sepc, s1
+    andi s0, s1, SSTATUS_SPP
+    bnez s0, _restore_context
+    addi s0, sp, 36 * REGBYTES
+    csrw sscratch, s0
+_restore_context:
+    csrw sstatus, s1
+    csrw sepc, s2
 
     LOAD x1, 1*REGBYTES(sp)
     LOAD x3, 3*REGBYTES(sp)
