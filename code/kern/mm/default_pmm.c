@@ -261,3 +261,13 @@ default_check(void)
     assert(total == 0);
 }
 
+const struct pmm_manager default_pmm_manager = {
+    .name = "default_pmm_manager",
+    .init = default_init,
+    .init_memmap = default_init_memmap,
+    .alloc_pages = default_alloc_pages,
+    .free_pages = default_free_pages,
+    .nr_free_pages = default_nr_free_pages,
+    .check = default_check,
+};
+

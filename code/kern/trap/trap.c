@@ -153,6 +153,9 @@ void interrupt_handler(struct trapframe *tf) {
     case IRQ_S_TIMER:
         clock_set_next_event();
         ticks ++;
+        if (current != NULL && !trap_in_kernel(tf)) {
+            current->need_resched = 1;
+        }
 
         if (ticks % TICK_NUM == 0) {
             print_ticks();
@@ -198,21 +201,47 @@ void exception_handler(struct trapframe *tf) {
     case CAUSE_USER_ECALL:
         tf->epc += 4;
         syscall();
+        return;
+
+    case CAUSE_STORE_PAGE_FAULT:
+        if (current != NULL && !trap_in_kernel(tf) &&
+            do_cow_fault(current->mm, tf->tval) == 0) {
+            return;
+        }
         break;
 
     case CAUSE_ILLEGAL_INSTRUCTION:
+        if (!trap_in_kernel(tf)) {
+            break;
+        }
         cprintf("Illegal instruction at 0x%016lx\n", tf->epc);
         advance_epc(tf, instruction_length(tf->epc));
-        break;
+        return;
 
     case CAUSE_BREAKPOINT:
+        if (!trap_in_kernel(tf)) {
+            break;
+        }
         cprintf("Breakpoint at 0x%016lx\n", tf->epc);
         advance_epc(tf, instruction_length(tf->epc));
-        break;
+        return;
 
     default:
-        print_trapframe(tf);
         break;
+    }
+
+    if (current != NULL && !trap_in_kernel(tf)) {
+        cprintf("user exception %lu in pid %d at %p (tval %p)\n",
+                (unsigned long)tf->cause, current->pid,
+                (void *)tf->epc, (void *)tf->tval);
+        do_exit(-E_KILLED);
+        return;
+    }
+
+    print_trapframe(tf);
+    if (tf->cause == CAUSE_FETCH_PAGE_FAULT || tf->cause == CAUSE_LOAD_PAGE_FAULT ||
+        tf->cause == CAUSE_STORE_PAGE_FAULT) {
+        panic("kernel page fault\n");
     }
 }
 
@@ -233,7 +262,7 @@ static inline void trap_dispatch(struct trapframe *tf)
 /* *
  * trap - handles or dispatches an exception/interrupt. if and when trap() returns,
  * the code in kern/trap/trapentry.S restores the old CPU state saved in the
- * trapframe and then uses the iret instruction to return from the exception.
+ * trapframe and then uses the sret instruction to return from the exception.
  * */
 void trap(struct trapframe *tf)
 {
@@ -255,13 +284,13 @@ void trap(struct trapframe *tf)
         current->tf = otf;
         if (!in_kernel)
         {
+            if (current->need_resched && !(current->flags & PF_EXITING))
+            {
+                schedule();
+            }
             if (current->flags & PF_EXITING)
             {
                 do_exit(-E_KILLED);
-            }
-            if (current->need_resched)
-            {
-                schedule();
             }
         }
     }

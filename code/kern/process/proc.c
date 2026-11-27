@@ -123,17 +123,23 @@ get_proc_name(struct proc_struct *proc)
     return memcpy(name, proc->name, PROC_NAME_LEN);
 }
 
-// set_links - set the relation links of process
 static void
-set_links(struct proc_struct *proc)
+link_child(struct proc_struct *proc)
 {
-    list_add(&proc_list, &(proc->list_link));
     proc->yptr = NULL;
     if ((proc->optr = proc->parent->cptr) != NULL)
     {
         proc->optr->yptr = proc;
     }
     proc->parent->cptr = proc;
+}
+
+// set_links - publish the process and attach it to its parent
+static void
+set_links(struct proc_struct *proc)
+{
+    list_add(&proc_list, &(proc->list_link));
+    link_child(proc);
     nr_process++;
 }
 
@@ -303,15 +309,67 @@ put_pgdir(struct mm_struct *mm)
     free_page(kva2page(mm->pgdir));
 }
 
+static void
+release_current_mm(void)
+{
+    struct mm_struct *mm = current->mm;
+    if (mm == NULL)
+    {
+        return;
+    }
+    current->mm = NULL;
+    current->pgdir = boot_pgdir_pa;
+    lsatp(boot_pgdir_pa);
+    flush_tlb();
+    if (mm_count_dec(mm) == 0)
+    {
+        exit_mmap(mm);
+        put_pgdir(mm);
+        mm_destroy(mm);
+    }
+}
+
 //lab5 function3 YOUR CODE update copy_mm
 
 static int
 copy_mm(uint32_t clone_flags, struct proc_struct *proc)
 {
-    // Lab4 only creates kernel threads sharing the kernel page table.
-    (void)clone_flags;
-    assert(current->mm == NULL);
-    proc->mm = NULL;
+    struct mm_struct *source = current->mm;
+    if (source == NULL)
+    {
+        return 0;
+    }
+
+    struct mm_struct *mm = source;
+    if (!(clone_flags & CLONE_VM))
+    {
+        mm = mm_create();
+        if (mm == NULL)
+        {
+            return -E_NO_MEM;
+        }
+        int ret = setup_pgdir(mm);
+        if (ret != 0)
+        {
+            mm_destroy(mm);
+            return ret;
+        }
+        lock_mm(source);
+        ret = dup_mmap(mm, source);
+        unlock_mm(source);
+        if (ret != 0)
+        {
+            // Any source pages already marked COW can regain write access on demand.
+            exit_mmap(mm);
+            put_pgdir(mm);
+            mm_destroy(mm);
+            return ret;
+        }
+    }
+
+    mm_count_inc(mm);
+    proc->mm = mm;
+    proc->pgdir = PADDR(mm->pgdir);
     return 0;
 }
 
@@ -342,7 +400,10 @@ init_main(void *arg)
     assert(nr_free_pages() == free_pages);
     assert(kallocated() == allocated);
     cprintf("init check memory pass.\n");
-    return 0;
+    intr_disable();
+    current->state = PROC_SLEEPING;
+    schedule();
+    panic("initproc resumed after the last user process exited.\n");
 }
 
 //lab5 function3 YOUR CODE
@@ -390,8 +451,7 @@ int do_fork(uint32_t clone_flags, uintptr_t stack, struct trapframe *tf)
     {
         proc->pid = get_pid();
         hash_proc(proc);
-        list_add(&proc_list, &(proc->list_link));
-        nr_process++;
+        set_links(proc);
         wakeup_proc(proc);
     }
     local_intr_restore(intr_flag);
@@ -413,7 +473,68 @@ fork_out:
 //   3. call scheduler to switch to other process
 int do_exit(int error_code)
 {
-    panic("process exit!!.\n");
+    if (current == idleproc || current == initproc)
+    {
+        panic("idleproc or initproc cannot exit.\n");
+    }
+    release_current_mm();
+
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    current->state = PROC_ZOMBIE;
+    current->exit_code = error_code;
+    struct proc_struct *parent = current->parent;
+    if (parent->wait_state == WT_CHILD)
+    {
+        wakeup_proc(parent);
+    }
+
+    struct proc_struct *child = current->cptr;
+    current->cptr = NULL;
+    while (child != NULL)
+    {
+        struct proc_struct *sibling = child->optr;
+        child->parent = initproc;
+        link_child(child);
+        if (child->state == PROC_ZOMBIE && initproc->wait_state == WT_CHILD)
+        {
+            wakeup_proc(initproc);
+        }
+        child = sibling;
+    }
+    local_intr_restore(intr_flag);
+
+    schedule();
+    panic("zombie process resumed.\n");
+}
+
+int do_yield(void)
+{
+    current->need_resched = 1;
+    return 0;
+}
+
+int do_kill(int pid)
+{
+    int ret = -E_INVAL;
+    bool intr_flag;
+    local_intr_save(intr_flag);
+    struct proc_struct *proc = find_proc(pid);
+    if (proc != NULL && proc != initproc && proc->state != PROC_ZOMBIE)
+    {
+        ret = -E_KILLED;
+        if (!(proc->flags & PF_EXITING))
+        {
+            proc->flags |= PF_EXITING;
+            if (proc->state == PROC_SLEEPING && (proc->wait_state & WT_INTERRUPTED))
+            {
+                wakeup_proc(proc);
+            }
+            ret = 0;
+        }
+    }
+    local_intr_restore(intr_flag);
+    return ret;
 }
 
 
@@ -453,8 +574,9 @@ exec_mem_check(struct mm_struct *mm, uintptr_t addr, size_t len, bool write)
         for (uintptr_t va = ROUNDDOWN(addr, PGSIZE); va < end; va += PGSIZE)
         {
             pte_t *pte = get_pte(mm->pgdir, va, 0);
-            uint32_t perm = PTE_V | PTE_U | (write ? PTE_W : PTE_R);
-            if (pte == NULL || (*pte & perm) != perm)
+            uint32_t required = PTE_V | PTE_U;
+            uint32_t access = write ? PTE_W | PTE_COW : PTE_R;
+            if (pte == NULL || (*pte & required) != required || !(*pte & access))
             {
                 return 0;
             }
@@ -512,9 +634,11 @@ int do_wait(int pid, int *code_store)
         if (proc != NULL)
         {
             assert(proc != idleproc && proc != initproc);
-            if (code_store != NULL)
+            if (code_store != NULL && !copy_to_user(current->mm, code_store,
+                                                    &proc->exit_code, sizeof(int)))
             {
-                *code_store = proc->exit_code;
+                local_intr_restore(intr_flag);
+                return -E_INVAL;
             }
             unhash_proc(proc);
             remove_links(proc);
@@ -710,16 +834,7 @@ int do_execve(const char *name, size_t len, unsigned char *binary, size_t size)
             return -E_NO_MEM;
         }
         memcpy(image, binary, size);
-        lsatp(boot_pgdir_pa);
-        flush_tlb();
-        current->mm = NULL;
-        current->pgdir = boot_pgdir_pa;
-        if (mm_count_dec(mm) == 0)
-        {
-            exit_mmap(mm);
-            put_pgdir(mm);
-            mm_destroy(mm);
-        }
+        release_current_mm();
     }
 
     int ret = load_icode(image, size);
@@ -815,7 +930,11 @@ void proc_run(struct proc_struct *proc)
         {
             struct proc_struct *prev = current;
             current = proc;
-            lsatp(proc->pgdir);
+            if (prev->pgdir != proc->pgdir)
+            {
+                lsatp(proc->pgdir);
+                flush_tlb();
+            }
             switch_to(&(prev->context), &(proc->context));
         }
         local_intr_restore(intr_flag);

@@ -341,70 +341,116 @@ void unmap_range(pde_t *pgdir, uintptr_t start, uintptr_t end)
     } while (start != 0 && start < end);
 }
 
+static bool page_table_empty(const pte_t *table)
+{
+    for (int i = 0; i < NPTEENTRY; i++)
+    {
+        if (table[i] & PTE_V)
+        {
+            return 0;
+        }
+    }
+    return 1;
+}
+
 void exit_range(pde_t *pgdir, uintptr_t start, uintptr_t end)
 {
     assert(start % PGSIZE == 0 && end % PGSIZE == 0);
     assert(USER_ACCESS(start, end));
 
-    uintptr_t d1start, d0start;
-    int free_pt, free_pd0;
-    pde_t *pd0, *pt, pde1, pde0;
-    d1start = ROUNDDOWN(start, PDSIZE);
-    d0start = ROUNDDOWN(start, PTSIZE);
-    do
+    for (uintptr_t va = ROUNDDOWN(start, PTSIZE); va < end;)
     {
-        // level 1 page directory entry
-        pde1 = pgdir[PDX1(d1start)];
-        // if there is a valid entry, get into level 0
-        // and try to free all page tables pointed to by
-        // all valid entries in level 0 page directory,
-        // then try to free this level 0 page directory
-        // and update level 1 entry
-        if (pde1 & PTE_V)
+        pde_t *root_entry = &pgdir[PDX1(va)];
+        uintptr_t next_root = ROUNDDOWN(va, PDSIZE) + PDSIZE;
+        if (!(*root_entry & PTE_V))
         {
-            pd0 = page2kva(pde2page(pde1));
-            // try to free all page tables
-            free_pd0 = 1;
-            do
+            va = next_root;
+            continue;
+        }
+
+        struct Page *directory_page = pde2page(*root_entry);
+        pde_t *directory = page2kva(directory_page);
+        for (; va < end && va < next_root; va += PTSIZE)
+        {
+            pde_t *entry = &directory[PDX0(va)];
+            if (*entry & PTE_V)
             {
-                pde0 = pd0[PDX0(d0start)];
-                if (pde0 & PTE_V)
+                struct Page *table_page = pde2page(*entry);
+                if (page_table_empty(page2kva(table_page)))
                 {
-                    pt = page2kva(pde2page(pde0));
-                    // try to free page table
-                    free_pt = 1;
-                    for (int i = 0; i < NPTEENTRY; i++)
-                        if (pt[i] & PTE_V)
-                        {
-                            free_pt = 0;
-                            break;
-                        }
-                    // free it only when all entry are already invalid
-                    if (free_pt)
-                    {
-                        free_page(pde2page(pde0));
-                        pd0[PDX0(d0start)] = 0;
-                    }
+                    *entry = 0;
+                    free_page(table_page);
                 }
-                else
-                    free_pd0 = 0;
-                d0start += PTSIZE;
-            } while (d0start != 0 && d0start < d1start + PDSIZE && d0start < end);
-            // free level 0 page directory only when all pde0s in it are already invalid
-            if (free_pd0)
-            {
-                free_page(pde2page(pde1));
-                pgdir[PDX1(d1start)] = 0;
             }
         }
-        d1start += PDSIZE;
-        d0start = d1start;
-    } while (d1start != 0 && d1start < end);
+        if (page_table_empty(directory))
+        {
+            *root_entry = 0;
+            free_page(directory_page);
+        }
+    }
 }
 
 
-//lab5 function3 YOUR CODE 
+//lab5 function3 YOUR CODE
+int copy_range(pde_t *to, pde_t *from, uintptr_t start, uintptr_t end, bool cow)
+{
+    assert(start % PGSIZE == 0 && end % PGSIZE == 0);
+    assert(USER_ACCESS(start, end));
 
+    for (uintptr_t va = start; va < end;)
+    {
+        pte_t *source = get_pte(from, va, 0);
+        if (source == NULL)
+        {
+            va = ROUNDDOWN(va, PTSIZE) + PTSIZE;
+            continue;
+        }
+        if (*source & PTE_V)
+        {
+            struct Page *page = pte2page(*source);
+            uint32_t perm = *source & (PTE_USER | PTE_COW);
+            if (cow)
+            {
+                if (perm & PTE_W)
+                {
+                    perm = (perm & ~PTE_W) | PTE_COW;
+                }
+                int ret = page_insert(to, page, va, perm);
+                if (ret != 0)
+                {
+                    return ret;
+                }
+                if (*source & PTE_W)
+                {
+                    *source = (*source & ~(pte_t)PTE_W) | PTE_COW;
+                    tlb_invalidate(from, va);
+                }
+            }
+            else
+            {
+                if (perm & PTE_COW)
+                {
+                    perm = (perm & ~PTE_COW) | PTE_W;
+                }
+                struct Page *copy = alloc_page();
+                if (copy == NULL)
+                {
+                    return -E_NO_MEM;
+                }
+                memcpy(page2kva(copy), page2kva(page), PGSIZE);
+                int ret = page_insert(to, copy, va, perm);
+                if (ret != 0)
+                {
+                    free_page(copy);
+                    return ret;
+                }
+            }
+        }
+        va += PGSIZE;
+    }
+    return 0;
+}
 
 //lab4 请补充你在lab4中的代码
 //LAB4 function1 2410966
@@ -464,11 +510,10 @@ void page_remove(pde_t *pgdir, uintptr_t la)
     }
 }
 
-// invalidate a TLB entry, but only if the page tables being
-// edited are the ones currently in use by the processor.
+// Address spaces share ASID 0, so invalidate this address on the current hart.
 void tlb_invalidate(pde_t *pgdir, uintptr_t la)
 {
-    asm volatile("sfence.vma %0" : : "r"(la));
+    asm volatile("sfence.vma %0" : : "r"(la) : "memory");
 }
 
 // pgdir_alloc_page - call alloc_page & page_insert functions to

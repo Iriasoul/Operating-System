@@ -202,9 +202,28 @@ out:
     return ret;
 }
 
-//lab5 function3 YOUR CODE 
-
-
+//lab5 function3 YOUR CODE
+int dup_mmap(struct mm_struct *to, struct mm_struct *from)
+{
+    list_entry_t *list = &from->mmap_list;
+    for (list_entry_t *le = list_next(list); le != list; le = list_next(le))
+    {
+        struct vma_struct *source = le2vma(le, list_link);
+        struct vma_struct *vma = vma_create(source->vm_start, source->vm_end,
+                                            source->vm_flags);
+        if (vma == NULL)
+        {
+            return -E_NO_MEM;
+        }
+        insert_vma_struct(to, vma);
+        int ret = copy_range(to->pgdir, from->pgdir, vma->vm_start, vma->vm_end, 1);
+        if (ret != 0)
+        {
+            return ret;
+        }
+    }
+    return 0;
+}
 
 void exit_mmap(struct mm_struct *mm)
 {
@@ -223,6 +242,53 @@ void exit_mmap(struct mm_struct *mm)
     }
 }
 
+// lab5 Challenge: only originally writable pages marked COW can regain PTE_W.
+int do_cow_fault(struct mm_struct *mm, uintptr_t addr)
+{
+    if (mm == NULL)
+    {
+        return -E_FAULT;
+    }
+
+    int ret = -E_FAULT;
+    lock_mm(mm);
+    if (!user_mem_check(mm, addr, 1, 1))
+    {
+        goto out;
+    }
+    uintptr_t va = ROUNDDOWN(addr, PGSIZE);
+    pte_t *pte = get_pte(mm->pgdir, va, 0);
+    uint32_t required = PTE_V | PTE_U | PTE_R | PTE_COW;
+    if (pte == NULL || (*pte & (required | PTE_W)) != required)
+    {
+        goto out;
+    }
+
+    struct Page *page = pte2page(*pte);
+    uint32_t perm = (*pte & PTE_USER) | PTE_W;
+    if (page_ref(page) == 1)
+    {
+        ret = page_insert(mm->pgdir, page, va, perm);
+        goto out;
+    }
+
+    struct Page *copy = alloc_page();
+    if (copy == NULL)
+    {
+        ret = -E_NO_MEM;
+        goto out;
+    }
+    memcpy(page2kva(copy), page2kva(page), PGSIZE);
+    ret = page_insert(mm->pgdir, copy, va, perm);
+    if (ret != 0)
+    {
+        free_page(copy);
+    }
+out:
+    unlock_mm(mm);
+    return ret;
+}
+
 bool copy_from_user(struct mm_struct *mm, void *dst, const void *src, size_t len, bool writable)
 {
     if (!user_mem_check(mm, (uintptr_t)src, len, writable))
@@ -235,9 +301,25 @@ bool copy_from_user(struct mm_struct *mm, void *dst, const void *src, size_t len
 
 bool copy_to_user(struct mm_struct *mm, void *dst, const void *src, size_t len)
 {
-    if (!user_mem_check(mm, (uintptr_t)dst, len, 1))
+    uintptr_t start = (uintptr_t)dst;
+    if (!user_mem_check(mm, start, len, 1))
     {
         return 0;
+    }
+    if (mm != NULL)
+    {
+        for (uintptr_t va = ROUNDDOWN(start, PGSIZE); va < start + len; va += PGSIZE)
+        {
+            pte_t *pte = get_pte(mm->pgdir, va, 0);
+            if (pte == NULL || (*pte & (PTE_V | PTE_U)) != (PTE_V | PTE_U))
+            {
+                return 0;
+            }
+            if (!(*pte & PTE_W) && do_cow_fault(mm, va) != 0)
+            {
+                return 0;
+            }
+        }
     }
     memcpy(dst, src, len);
     return 1;

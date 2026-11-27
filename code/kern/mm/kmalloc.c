@@ -89,7 +89,7 @@ static void *__slob_get_free_pages(gfp_t gfp, int order)
 
 static inline void __slob_free_pages(unsigned long kva, int order)
 {
-	free_pages(kva2page(kva), 1 << order);
+	free_pages(kva2page((void *)kva), 1 << order);
 }
 
 static void slob_free(void *b, int size);
@@ -111,7 +111,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align)
 			aligned = (slob_t *)ALIGN((unsigned long)cur, align);
 			delta = aligned - cur;
 		}
-		if (cur->units >= units + delta)
+		if (cur != &arena && cur->units >= units + delta)
 		{ /* room enough? */
 			if (delta)
 			{ /* need to fragment head to align? */
@@ -157,7 +157,7 @@ static void *slob_alloc(size_t size, gfp_t gfp, int align)
 
 static void slob_free(void *block, int size)
 {
-	slob_t *cur, *b = (slob_t *)block;
+	slob_t *b = (slob_t *)block;
 	unsigned long flags;
 
 	if (!block)
@@ -166,29 +166,40 @@ static void slob_free(void *block, int size)
 	if (size)
 		b->units = SLOB_UNITS(size);
 
-	/* Find reinsertion point */
+	/* Keep blocks within their backing page so a fully free page can be returned. */
+	uintptr_t page = ROUNDDOWN((uintptr_t)b, PAGE_SIZE);
 	spin_lock_irqsave(&slob_lock, flags);
-	for (cur = slobfree; !(b > cur && b < cur->next); cur = cur->next)
-		if (cur >= cur->next && (b > cur || b < cur->next))
-			break;
-
-	if (b + b->units == cur->next)
+	slob_t *before = &arena, *prev = &arena, *next = arena.next;
+	while (next != &arena && (uintptr_t)next < (uintptr_t)b)
 	{
-		b->units += cur->next->units;
-		b->next = cur->next->next;
+		before = prev;
+		prev = next;
+		next = next->next;
+	}
+
+	if (next != &arena && (uintptr_t)next < page + PAGE_SIZE && b + b->units == next)
+	{
+		b->units += next->units;
+		next = next->next;
+	}
+
+	if (prev != &arena && (uintptr_t)prev >= page && prev + prev->units == b)
+	{
+		prev->units += b->units;
+		b = prev;
+		prev = before;
+	}
+	b->next = next;
+
+	/* A PAGE_SIZE insertion feeds the allocator with a newly acquired page. */
+	if (size != PAGE_SIZE && b->units == SLOB_UNITS(PAGE_SIZE))
+	{
+		prev->next = next;
+		__slob_free_pages(page, 0);
 	}
 	else
-		b->next = cur->next;
-
-	if (cur + cur->units == b)
-	{
-		cur->units += b->units;
-		cur->next = b->next;
-	}
-	else
-		cur->next = b;
-
-	slobfree = cur;
+		prev->next = b;
+	slobfree = prev;
 
 	spin_unlock_irqrestore(&slob_lock, flags);
 }

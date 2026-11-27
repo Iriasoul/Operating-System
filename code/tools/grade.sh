@@ -22,7 +22,6 @@ makeopts="--quiet --no-print-directory -j"
 make_print() {
     echo `$make $makeopts print-$1`
 }
-echo `$make`
 
 ## command tools
 awk='awk'
